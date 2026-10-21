@@ -10,6 +10,8 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware.j
 import { buildTypeOrmOptions } from './config/database/typeorm.config.js';
 import { validateEnv } from './config/env/env.validation.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { UsersModule } from './modules/users/users.module.js';
+import { AuthModule } from './modules/auth/auth.module.js';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { HealthModule } from './modules/health/health.module.js';
       useFactory: (configService: ConfigService) => buildTypeOrmOptions(configService),
     }),
     HealthModule,
+    UsersModule,
+    AuthModule,
   ],
 })
 export class AppModule implements NestModule {
