@@ -9,6 +9,7 @@ import { ProjectsPage } from '@/features/projects/ProjectsPage';
 import { ProjectDetailPage } from '@/features/projects/ProjectDetailPage';
 import { ProjectMembersPage } from '@/features/projects/ProjectMembersPage';
 import { TasksPage } from '@/features/tasks/TasksPage';
+import { TaskBoardPage } from '@/features/tasks/TaskBoardPage';
 import { ReportsPage } from '@/features/reports/ReportsPage';
 
 export const router = createBrowserRouter([
@@ -25,6 +26,7 @@ export const router = createBrowserRouter([
           { path: 'projects', element: <ProjectsPage /> },
           { path: 'projects/:projectId', element: <ProjectDetailPage /> },
           { path: 'projects/:projectId/tasks', element: <TasksPage /> },
+          { path: 'projects/:projectId/board', element: <TaskBoardPage /> },
           { path: 'projects/:projectId/members', element: <ProjectMembersPage /> },
           { path: 'reports', element: <ReportsPage /> },
         ],

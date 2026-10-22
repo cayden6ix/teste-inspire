@@ -13,6 +13,7 @@ import { STATUS_TONES } from '@/utils/tone';
 import { useMembers } from '@/features/projects/useMembers';
 import { useProject } from '@/features/projects/useProject';
 import { createTask, deleteTask, exportTasksCsv, importTasksCsv, updateTask } from './tasks.service';
+import { TaskViewTabs } from './TaskViewTabs';
 import { useTasks } from './useTasks';
 
 /**
@@ -141,11 +142,14 @@ export function TasksPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-900">Tarefas</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          {project ? `Projeto ${project.name}` : 'Projeto'} - status pendente, em andamento e concluida.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Tarefas</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            {project ? `Projeto ${project.name}` : 'Projeto'} - status pendente, em andamento e concluida.
+          </p>
+        </div>
+        <TaskViewTabs projectId={projectId} active="lista" />
       </header>
 
       {formError && <Alert>{formError}</Alert>}

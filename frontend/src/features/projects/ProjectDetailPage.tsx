@@ -146,6 +146,11 @@ export function ProjectDetailPage() {
             Ver tarefas
           </Link>
         </Card>
+        <Card title="Quadro" description="Kanban por status, com arrastar e soltar (D-012).">
+          <Link to={`/projects/${project.id}/board`} className="text-sm text-slate-900 underline">
+            Ver quadro
+          </Link>
+        </Card>
         <Card title="Membros" description="Papeis owner, admin, member e viewer (D-013).">
           <Link to={`/projects/${project.id}/members`} className="text-sm text-slate-900 underline">
             Ver membros
