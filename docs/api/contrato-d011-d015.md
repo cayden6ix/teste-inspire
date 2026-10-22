@@ -1,8 +1,13 @@
-﻿CONTRATO DE ENDPOINTS - D-011 a D-015
+﻿CONTRATO DE ENDPOINTS - D-011 a D-015 (ATUALIZADO)
 
 Base: http://localhost:3000/api
 Auth: Authorization: Bearer <access_token>
 Erros: {statusCode,error,message,path,timestamp}
+
+USUARIOS
+GET /api/users -> 200 [{id,name,email}] sem password max 50 por name
+GET /api/users?email=<email> -> 200 [{id,name,email}] busca parcial ILIKE case-insensitive array vazio se nao achar
+GET /api/users sem token -> 401
 
 PAPEIS
 owner > admin > member > viewer
@@ -33,13 +38,14 @@ POST /api/projects/:projectId/tasks {title,description?,status?,assigneeId?,dueD
 GET /api/projects/:projectId/tasks/:taskId -> 200
 PATCH /api/projects/:projectId/tasks/:taskId -> 200
 DELETE /api/projects/:projectId/tasks/:taskId -> 204
-Status: pendente/em_andamento/concluida
+status: pendente | em_andamento | concluida
 assigneeId deve ser membro do projeto
 
 CSV (D-014)
 GET /api/projects/:projectId/tasks/export -> text/csv Content-Disposition attachment filename tarefas-<projectId>.csv cabecalho titulo,descricao,status,responsavel_email,data_limite
-POST /api/projects/:projectId/tasks/import -> {created,errors:[{row,message}]} CSV puro ou multipart file campo file mesmo cabecalho titulo obrigatorio status default pendente
+POST /api/projects/:projectId/tasks/import multipart/form-data campo file -> 201 {created,errors:[{row,message}]} ou text/csv puro tambem funciona. row = linha do CSV (1=cabecalho). Erros ignorados.
 
 RELATORIOS (D-015)
 GET /api/reports?groupBy=status|user&projectId=<uuid> -> {groupBy,total,byStatus:{pendente,em_andamento,concluida},groups:[{key,label,count}]}
 groupBy default status sem projectId agrega todos projetos onde sou membro
+roles/status sempre minusculos
