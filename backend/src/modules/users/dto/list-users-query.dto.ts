@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsOptional } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class ListUsersQueryDto {
   @ApiPropertyOptional({
@@ -7,6 +7,7 @@ export class ListUsersQueryDto {
     description: 'Filtra os usuarios por email (busca parcial, sem diferenciar maiusculas)',
   })
   @IsOptional()
-  @IsEmail()
+  @IsString()
+  @MaxLength(320)
   email?: string;
 }
