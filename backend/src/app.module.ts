@@ -12,6 +12,9 @@ import { validateEnv } from './config/env/env.validation.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { ProjectsModule } from './modules/projects/projects.module.js';
+import { TasksModule } from './modules/tasks/tasks.module.js';
+import { ReportsModule } from './modules/reports/reports.module.js';
 
 @Module({
   imports: [
@@ -28,6 +31,9 @@ import { AuthModule } from './modules/auth/auth.module.js';
     HealthModule,
     UsersModule,
     AuthModule,
+    ProjectsModule,
+    TasksModule,
+    ReportsModule,
   ],
 })
 export class AppModule implements NestModule {

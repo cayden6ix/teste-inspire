@@ -1,16 +1,23 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   const configService = app.get(ConfigService);
 
   app.use(helmet());
+
+  // Importacao de CSV (D-014): o corpo pode chegar como texto puro (text/csv).
+  app.useBodyParser('text', {
+    type: ['text/csv', 'text/plain'],
+    limit: '5mb',
+  });
 
   app.enableCors({
     origin: configService
