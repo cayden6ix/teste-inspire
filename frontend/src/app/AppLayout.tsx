@@ -1,12 +1,18 @@
-import { Link, Outlet } from 'react-router-dom';
+import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 
 /**
  * Layout raiz da aplicacao: cabecalho + area de conteudo das rotas aninhadas.
  */
 export function AppLayout() {
+  const navigate = useNavigate();
   const accessToken = useAuthStore((s) => s.accessToken);
   const logout = useAuthStore((s) => s.logout);
+
+  function handleLogout() {
+    logout();
+    navigate('/');
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -17,9 +23,17 @@ export function AppLayout() {
           </Link>
           <nav className="flex items-center gap-4 text-sm">
             {accessToken ? (
-              <button onClick={logout} className="text-slate-700 hover:text-slate-900">
-                Sair
-              </button>
+              <>
+                <Link to="/projects" className="text-slate-700 hover:text-slate-900">
+                  Projetos
+                </Link>
+                <Link to="/reports" className="text-slate-700 hover:text-slate-900">
+                  Relatorios
+                </Link>
+                <button onClick={handleLogout} className="text-slate-700 hover:text-slate-900">
+                  Sair
+                </button>
+              </>
             ) : (
               <>
                 <Link to="/login" className="text-slate-700 hover:text-slate-900">

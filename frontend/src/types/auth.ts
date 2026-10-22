@@ -2,7 +2,8 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'ADMIN' | 'USER';
+  /** Perfil global do usuario. O backend ainda nao expoe a coluna (D-005). */
+  role?: 'ADMIN' | 'USER';
   active: boolean;
   createdAt: string;
   updatedAt: string;
