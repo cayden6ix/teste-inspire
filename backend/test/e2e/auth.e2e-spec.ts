@@ -103,6 +103,45 @@ describe('Auth (e2e)', () => {
       ]);
     });
 
+    it('limita os tamanhos (A5): nome e senha com 500 caracteres são recusados e nada é gravado', async () => {
+      const email = emailUnico('limites');
+
+      const response = await testApp
+        .http()
+        .post(url('/auth/register'))
+        .send({ email, password: 'p'.repeat(500), name: 'N'.repeat(500) });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toEqual([
+        'O campo "Senha" deve ter no máximo 72 caracteres.',
+        'O campo "Nome" deve ter no máximo 120 caracteres.',
+      ]);
+      const [{ total }] = (await testApp.dataSource.query(
+        'SELECT count(*)::int AS total FROM users WHERE email = $1',
+        [email],
+      )) as Array<{ total: number }>;
+      expect(total).toBe(0);
+    });
+
+    it('aceita os limites exatos: nome com 120 e senha com 72 caracteres', async () => {
+      const response = await testApp
+        .http()
+        .post(url('/auth/register'))
+        .send({ email: emailUnico('limite'), password: 'p'.repeat(72), name: 'N'.repeat(120) });
+
+      expect(response.status).toBe(201);
+    });
+
+    it('nome numérico (JSON) devolve 400: sem conversão implícita para texto', async () => {
+      const response = await testApp
+        .http()
+        .post(url('/auth/register'))
+        .send({ email: emailUnico(), password: SENHA_PADRAO, name: 12345 });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toEqual(['O campo "Nome" deve ser um texto.']);
+    });
+
     it('rejeita campos fora da whitelist (400)', async () => {
       const response = await testApp.http().post(url('/auth/register')).send({
         email: emailUnico(),
@@ -199,6 +238,18 @@ describe('Auth (e2e)', () => {
       expect(response.body.message).toEqual([
         'O campo "E-mail" deve ser um e-mail válido.',
         'O campo "Senha" não pode estar vazio.',
+      ]);
+    });
+
+    it('senha acima de 72 caracteres no login devolve 400 (sem gastar hash bcrypt)', async () => {
+      const response = await testApp
+        .http()
+        .post(url('/auth/login'))
+        .send({ email: emailUnico(), password: 'p'.repeat(500) });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toEqual([
+        'O campo "Senha" deve ter no máximo 72 caracteres.',
       ]);
     });
 

@@ -3,7 +3,6 @@ import { UsersService } from '../../src/modules/users/services/users.service.js'
 import { UsersRepository } from '../../src/modules/users/repositories/users.repository.js';
 import { ProjectAccessService } from '../../src/modules/projects/services/project-access.service.js';
 import { ProjectMembersRepository } from '../../src/modules/projects/repositories/project-members.repository.js';
-import { ProjectsRepository } from '../../src/modules/projects/repositories/projects.repository.js';
 import { CreateProjectDto } from '../../src/modules/projects/dto/create-project.dto.js';
 
 /**
@@ -17,7 +16,7 @@ describe('metadados de decorators (SWC)', () => {
     ]);
     expect(
       Reflect.getMetadata('design:paramtypes', ProjectAccessService),
-    ).toEqual([ProjectsRepository, ProjectMembersRepository]);
+    ).toEqual([ProjectMembersRepository]);
   });
 
   it('emite design:type nas propriedades dos DTOs', () => {

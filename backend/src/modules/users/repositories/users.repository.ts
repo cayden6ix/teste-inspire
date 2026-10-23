@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, FindOptionsOrder, FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { DataSource, FindOptionsOrder, FindOptionsWhere, Raw, Repository } from 'typeorm';
 import { PaginationParams } from '../../../common/dto/paginated.dto.js';
 import { escapeLike } from '../../../common/utils/like.util.js';
 import { toSqlDirection } from '../../../common/utils/pagination.util.js';
@@ -33,7 +33,8 @@ export class UsersRepository extends Repository<User> {
   }
 
   /**
-   * Pagina os usuarios com busca parcial por nome e/ou email.
+   * Pagina os usuarios com busca parcial por nome e/ou email, sem diferenciar maiusculas
+   * nem acentos (unaccent, D-029); curingas digitados sao tratados como texto.
    */
   findPage(
     filters: UserPageFilters,
@@ -43,11 +44,11 @@ export class UsersRepository extends Repository<User> {
     const where: FindOptionsWhere<User> = {};
 
     if (filters.name) {
-      where.name = ILike(`%${escapeLike(filters.name)}%`);
+      where.name = unaccentILike('name', filters.name);
     }
 
     if (filters.email) {
-      where.email = ILike(`%${escapeLike(filters.email)}%`);
+      where.email = unaccentILike('email', filters.email);
     }
 
     // Desempate por id na mesma direcao, para a paginacao ser deterministica.
@@ -64,4 +65,11 @@ export class UsersRepository extends Repository<User> {
       take: pagination.limit,
     });
   }
+}
+
+/** `unaccent(coluna) ILIKE unaccent('%termo%')`, com os curingas do termo escapados. */
+function unaccentILike(parameter: string, term: string) {
+  return Raw((alias) => `unaccent(${alias}) ILIKE unaccent(:${parameter})`, {
+    [parameter]: `%${escapeLike(term)}%`,
+  });
 }

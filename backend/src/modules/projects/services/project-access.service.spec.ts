@@ -2,7 +2,6 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ProjectRole } from '../../../common/enums/project-role.enum.js';
 import { ProjectMembersRepository } from '../repositories/project-members.repository.js';
-import { ProjectsRepository } from '../repositories/projects.repository.js';
 import { ProjectAccessService } from './project-access.service.js';
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
@@ -10,7 +9,6 @@ const USER_ID = '22222222-2222-4222-8222-222222222222';
 
 describe('ProjectAccessService', () => {
   let service: ProjectAccessService;
-  const projectsRepository = { findOne: vi.fn() };
   const membersRepository = { findByProjectAndUser: vi.fn() };
 
   beforeEach(async () => {
@@ -21,7 +19,6 @@ describe('ProjectAccessService', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         ProjectAccessService,
-        { provide: ProjectsRepository, useValue: projectsRepository },
         { provide: ProjectMembersRepository, useValue: membersRepository },
       ],
     }).compile();
@@ -52,34 +49,23 @@ describe('ProjectAccessService', () => {
   });
 
   describe('requireRole', () => {
-    it('devolve 404 quando o projeto não existe, sem consultar o papel', async () => {
-      projectsRepository.findOne.mockResolvedValue(null);
-
-      const promise = service.requireRole(PROJECT_ID, USER_ID, [
-        ProjectRole.Owner,
-      ]);
-
-      await expect(promise).rejects.toBeInstanceOf(NotFoundException);
-      await expect(promise).rejects.toThrow('Projeto não encontrado.');
-      expect(membersRepository.findByProjectAndUser).not.toHaveBeenCalled();
-    });
-
-    it('devolve 403 quando o usuário não é membro do projeto', async () => {
-      projectsRepository.findOne.mockResolvedValue({ id: PROJECT_ID });
+    it('devolve 404 "Projeto não encontrado." para quem não é membro (ou projeto inexistente), com uma única consulta (D-027)', async () => {
       membersRepository.findByProjectAndUser.mockResolvedValue(null);
 
       const promise = service.requireRole(PROJECT_ID, USER_ID, [
         ProjectRole.Viewer,
       ]);
 
-      await expect(promise).rejects.toBeInstanceOf(ForbiddenException);
-      await expect(promise).rejects.toThrow(
-        'Você não faz parte deste projeto.',
+      await expect(promise).rejects.toBeInstanceOf(NotFoundException);
+      await expect(promise).rejects.toThrow('Projeto não encontrado.');
+      expect(membersRepository.findByProjectAndUser).toHaveBeenCalledTimes(1);
+      expect(membersRepository.findByProjectAndUser).toHaveBeenCalledWith(
+        PROJECT_ID,
+        USER_ID,
       );
     });
 
     it('devolve 403 quando o papel não está entre os permitidos', async () => {
-      projectsRepository.findOne.mockResolvedValue({ id: PROJECT_ID });
       membersRepository.findByProjectAndUser.mockResolvedValue({
         role: ProjectRole.Viewer,
       });
@@ -102,26 +88,22 @@ describe('ProjectAccessService', () => {
       ProjectRole.Member,
       ProjectRole.Viewer,
     ])('devolve o papel %s quando ele é permitido', async (role) => {
-      projectsRepository.findOne.mockResolvedValue({ id: PROJECT_ID });
       membersRepository.findByProjectAndUser.mockResolvedValue({ role });
 
       await expect(
         service.requireRole(PROJECT_ID, USER_ID, [role]),
       ).resolves.toBe(role);
-      expect(projectsRepository.findOne).toHaveBeenCalledWith({
-        where: { id: PROJECT_ID },
-      });
     });
   });
 });
 
 describe('ProjectAccessService: consultas usadas por outros módulos', () => {
   let service: ProjectAccessService;
-  const projectsRepository = { findOne: vi.fn() };
   const membersRepository = {
     findByProjectAndUser: vi.fn(),
     findProjectIdsByUser: vi.fn(),
     findMemberEmails: vi.fn(),
+    existsByUserWithRoles: vi.fn(),
   };
 
   beforeEach(async () => {
@@ -130,7 +112,6 @@ describe('ProjectAccessService: consultas usadas por outros módulos', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         ProjectAccessService,
-        { provide: ProjectsRepository, useValue: projectsRepository },
         { provide: ProjectMembersRepository, useValue: membersRepository },
       ],
     }).compile();
@@ -146,6 +127,18 @@ describe('ProjectAccessService: consultas usadas por outros módulos', () => {
 
     await expect(service.isMember(PROJECT_ID, USER_ID)).resolves.toBe(true);
     await expect(service.isMember(PROJECT_ID, USER_ID)).resolves.toBe(false);
+  });
+
+  it('managesAnyProject: pergunta se o usuário é owner ou admin em algum projeto (D-028)', async () => {
+    membersRepository.existsByUserWithRoles.mockResolvedValueOnce(true);
+    membersRepository.existsByUserWithRoles.mockResolvedValueOnce(false);
+
+    await expect(service.managesAnyProject(USER_ID)).resolves.toBe(true);
+    await expect(service.managesAnyProject(USER_ID)).resolves.toBe(false);
+    expect(membersRepository.existsByUserWithRoles).toHaveBeenCalledWith(
+      USER_ID,
+      [ProjectRole.Owner, ProjectRole.Admin],
+    );
   });
 
   it('listProjectIdsOfUser: devolve os ids dos projetos do usuário', async () => {

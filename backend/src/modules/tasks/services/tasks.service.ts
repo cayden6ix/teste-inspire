@@ -26,7 +26,10 @@ import {
   type TaskAssigneeCount,
   type TaskStatusCount,
 } from '../tasks.types.js';
-import { TasksCsvService } from './tasks-csv.service.js';
+import { normalizeCsvKey, TasksCsvService } from './tasks-csv.service.js';
+
+/** Lista dos status aceitos, para a mensagem de erro da importacao. */
+const VALID_STATUS_HINT = `Use: ${TASK_STATUS_VALUES.slice(0, -1).join(', ')} ou ${TASK_STATUS_VALUES.at(-1)}.`;
 
 @Injectable()
 export class TasksService {
@@ -219,11 +222,12 @@ export class TasksService {
         continue;
       }
 
-      const statusRaw = (row['status'] ?? '').trim().toLowerCase();
-      const status = (statusRaw || TaskStatus.Pendente) as TaskStatus;
+      // Aceita variacoes de escrita: 'Em Andamento', ' PENDENTE ', 'Concluída' (D-030).
+      const statusRaw = (row['status'] ?? '').trim();
+      const status = (normalizeCsvKey(statusRaw) || TaskStatus.Pendente) as TaskStatus;
 
       if (!TASK_STATUS_VALUES.includes(status)) {
-        errors.push({ row: lineNumber, message: `Status inválido: ${statusRaw}.` });
+        errors.push({ row: lineNumber, message: `Status inválido: "${statusRaw}". ${VALID_STATUS_HINT}` });
         continue;
       }
 

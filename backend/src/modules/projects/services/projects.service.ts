@@ -1,9 +1,10 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PaginatedResponse } from '../../../common/dto/paginated.dto.js';
 import {
   MANAGE_ROLES,
   OWNER_ROLES,
   ProjectRole,
+  READ_ROLES,
 } from '../../../common/enums/project-role.enum.js';
 import { SortOrder } from '../../../common/enums/sort-order.enum.js';
 import { toPaginatedResponse } from '../../../common/utils/pagination.util.js';
@@ -14,7 +15,7 @@ import { UpdateProjectDto } from '../dto/update-project.dto.js';
 import { Project } from '../entities/project.entity.js';
 import { ProjectMembersRepository } from '../repositories/project-members.repository.js';
 import { ProjectsRepository } from '../repositories/projects.repository.js';
-import { ProjectAccessService } from './project-access.service.js';
+import { PROJECT_NOT_FOUND_MESSAGE, ProjectAccessService } from './project-access.service.js';
 
 @Injectable()
 export class ProjectsService {
@@ -61,20 +62,20 @@ export class ProjectsService {
     );
   }
 
+  /**
+   * Quem nao e membro recebe 404, como se o projeto nao existisse (D-027): o acesso e
+   * checado antes de carregar o projeto.
+   */
   async findOneForUser(projectId: string, userId: string): Promise<ProjectResponseDto> {
+    const role = await this.accessService.requireRole(projectId, userId, READ_ROLES);
     const project = await this.getProjectOrFail(projectId);
-    const role = await this.accessService.getRole(projectId, userId);
-
-    if (!role) {
-      throw new ForbiddenException('Você não faz parte deste projeto.');
-    }
 
     return this.toView(project, role);
   }
 
   async update(projectId: string, userId: string, dto: UpdateProjectDto): Promise<ProjectResponseDto> {
-    const project = await this.getProjectOrFail(projectId);
     const role = await this.accessService.requireRole(projectId, userId, MANAGE_ROLES);
+    const project = await this.getProjectOrFail(projectId);
 
     if (dto.name !== undefined) {
       project.name = dto.name;
@@ -90,7 +91,6 @@ export class ProjectsService {
   }
 
   async remove(projectId: string, userId: string): Promise<void> {
-    await this.getProjectOrFail(projectId);
     await this.accessService.requireRole(projectId, userId, OWNER_ROLES);
     await this.projectsRepository.delete(projectId);
   }
@@ -98,7 +98,7 @@ export class ProjectsService {
   private async getProjectOrFail(projectId: string): Promise<Project> {
     const project = await this.projectsRepository.findOne({ where: { id: projectId } });
     if (!project) {
-      throw new NotFoundException('Projeto não encontrado.');
+      throw new NotFoundException(PROJECT_NOT_FOUND_MESSAGE);
     }
     return project;
   }

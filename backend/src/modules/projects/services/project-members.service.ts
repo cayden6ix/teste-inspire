@@ -12,6 +12,8 @@ import {
   READ_ROLES,
 } from '../../../common/enums/project-role.enum.js';
 import { toPaginatedResponse } from '../../../common/utils/pagination.util.js';
+import { ListUsersQueryDto } from '../../users/dto/list-users-query.dto.js';
+import { UserResponseDto } from '../../users/dto/user-response.dto.js';
 import { UsersService } from '../../users/services/users.service.js';
 import { AddMemberDto } from '../dto/add-member.dto.js';
 import { ListMembersQueryDto } from '../dto/list-members-query.dto.js';
@@ -68,6 +70,22 @@ export class ProjectMembersService {
       total,
       query,
     );
+  }
+
+  /**
+   * Busca de usuarios para adicionar a um projeto (`GET /users`, D-028): so quem pode
+   * adicionar membros em algum projeto (owner ou admin) usa a busca. A permissao e checada
+   * antes do termo, para quem nao pode buscar nao aprender nada com a resposta.
+   */
+  async searchUsers(
+    actorId: string,
+    query: ListUsersQueryDto,
+  ): Promise<PaginatedResponse<UserResponseDto>> {
+    if (!(await this.accessService.managesAnyProject(actorId))) {
+      throw new ForbiddenException('Você não tem permissão para buscar usuários.');
+    }
+
+    return this.usersService.search(query);
   }
 
   async add(projectId: string, actorId: string, dto: AddMemberDto): Promise<ProjectMemberResponseDto> {

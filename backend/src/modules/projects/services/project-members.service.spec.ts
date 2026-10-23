@@ -26,8 +26,8 @@ describe('ProjectMembersService', () => {
     save: vi.fn(),
     delete: vi.fn(),
   };
-  const usersService = { findById: vi.fn() };
-  const accessService = { requireRole: vi.fn() };
+  const usersService = { findById: vi.fn(), search: vi.fn() };
+  const accessService = { requireRole: vi.fn(), managesAnyProject: vi.fn() };
 
   const usuario = {
     id: TARGET_ID,
@@ -112,15 +112,43 @@ describe('ProjectMembersService', () => {
       ]);
     });
 
-    it('propaga o erro de acesso sem consultar membros', async () => {
+    it('propaga o erro de acesso (404 para quem não é membro) sem consultar membros', async () => {
       accessService.requireRole.mockRejectedValue(
-        new ForbiddenException('Você não faz parte deste projeto.'),
+        new NotFoundException('Projeto não encontrado.'),
       );
 
       await expect(
         service.list(PROJECT_ID, ACTOR_ID, { page: 1, limit: 15 }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(membersRepository.findPageByProject).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('searchUsers (GET /users, D-028)', () => {
+    const query = { page: 1, limit: 10, email: 'bru' };
+
+    it('owner ou admin de algum projeto busca: delega ao UsersService', async () => {
+      accessService.managesAnyProject.mockResolvedValue(true);
+      usersService.search.mockResolvedValue({ data: [usuario], meta: {} });
+
+      await expect(service.searchUsers(ACTOR_ID, query)).resolves.toEqual({
+        data: [usuario],
+        meta: {},
+      });
+      expect(accessService.managesAnyProject).toHaveBeenCalledWith(ACTOR_ID);
+      expect(usersService.search).toHaveBeenCalledWith(query);
+    });
+
+    it('quem não gerencia nenhum projeto recebe 403 e a busca nem roda', async () => {
+      accessService.managesAnyProject.mockResolvedValue(false);
+
+      const promise = service.searchUsers(ACTOR_ID, query);
+
+      await expect(promise).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(promise).rejects.toThrow(
+        'Você não tem permissão para buscar usuários.',
+      );
+      expect(usersService.search).not.toHaveBeenCalled();
     });
   });
 

@@ -51,6 +51,43 @@ describe('Tarefas (e2e)', () => {
   const titulos = (response: { body: { data: Tarefa[] } }) =>
     response.body.data.map((t) => t.title);
 
+  describe('tipos no corpo sem conversão implícita (A4)', () => {
+    it.each([
+      ['POST', { title: 123 }],
+      ['POST', { title: true }],
+      ['PATCH', { title: 123 }],
+    ])('%s com title numérico/booleano devolve 400 e não grava', async (metodo, corpo) => {
+      const existente = await criarTarefa(testApp, ana, projeto.id, { title: 'Original' });
+      const requisicao =
+        metodo === 'POST'
+          ? testApp.http().post(tarefasUrl())
+          : testApp.http().patch(tarefasUrl(`/${existente.id}`));
+
+      const response = await requisicao.set(...bearer(ana.token)).send(corpo);
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toEqual(['O campo "Título" deve ser um texto.']);
+      const titulosNoBanco = (
+        (await testApp.dataSource.query('SELECT title FROM tasks WHERE project_id = $1', [
+          projeto.id,
+        ])) as Array<{ title: string }>
+      ).map((linha) => linha.title);
+      expect(titulosNoBanco).toEqual(['Original']);
+    });
+
+    it('description, status, assigneeId e dueDate com tipo errado devolvem 400', async () => {
+      const response = await testApp
+        .http()
+        .post(tarefasUrl())
+        .set(...bearer(ana.token))
+        .send({ title: 'Ok', description: 10, status: 1, assigneeId: 2, dueDate: 20260101 });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toHaveLength(4);
+      expect(response.body.message[0]).toBe('O campo "Descrição" deve ser um texto.');
+    });
+  });
+
   describe('POST /projects/:projectId/tasks', () => {
     it('cria com os padrões: status pendente, sem responsável nem prazo', async () => {
       const response = await testApp
@@ -477,6 +514,38 @@ describe('Tarefas (e2e)', () => {
 
       expect(titulos(login)).toEqual(['Corrigir LOGIN', 'Outra']);
       expect(titulos(porcento)).toEqual(['Meta de 50% feita']);
+    });
+
+    it('busca sem diferenciar acentos (D-029): "descricao" acha "Descrição" e "integracao" acha "Integração"', async () => {
+      await criarTarefa(testApp, ana, projeto.id, {
+        title: 'Revisar texto',
+        description: 'Descrição do módulo',
+      });
+      await criarTarefa(testApp, ana, projeto.id, { title: 'Integração com ERP' });
+      await criarTarefa(testApp, ana, projeto.id, { title: 'Sem relação' });
+
+      const descricao = await listar('?search=descricao');
+      const integracao = await listar('?search=INTEGRACAO');
+      const comAcentoNoTermo = await listar(`?search=${encodeURIComponent('Integração')}`);
+
+      expect(titulos(descricao)).toEqual(['Revisar texto']);
+      expect(titulos(integracao)).toEqual(['Integração com ERP']);
+      expect(titulos(comAcentoNoTermo)).toEqual(['Integração com ERP']);
+    });
+
+    it('com unaccent, % e _ digitados continuam literais (não viram curinga)', async () => {
+      await criarTarefa(testApp, ana, projeto.id, { title: 'Ação 100% concluída' });
+      await criarTarefa(testApp, ana, projeto.id, { title: 'Acao 1000 itens' });
+      await criarTarefa(testApp, ana, projeto.id, { title: 'campo_nome' });
+      await criarTarefa(testApp, ana, projeto.id, { title: 'campoXnome' });
+
+      const porcento = await listar(`?search=${encodeURIComponent('acao 100%')}`);
+      const sublinhado = await listar(`?search=${encodeURIComponent('campo_')}`);
+      const tudo = await listar(`?search=${encodeURIComponent('%')}`);
+
+      expect(titulos(porcento)).toEqual(['Ação 100% concluída']);
+      expect(titulos(sublinhado)).toEqual(['campo_nome']);
+      expect(titulos(tudo)).toEqual(['Ação 100% concluída']);
     });
 
     it('filtra por intervalo de prazo (inclusivo) e ignora tarefas sem prazo', async () => {

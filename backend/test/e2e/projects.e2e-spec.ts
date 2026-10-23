@@ -223,6 +223,18 @@ describe('Projetos (e2e)', () => {
       expect(response.body.meta.total).toBe(2);
     });
 
+    it('busca sem diferenciar acentos (D-029): "integracao" acha "Integração com ERP"', async () => {
+      await criarProjeto(testApp, ana, { name: 'Integração com ERP' });
+      await criarProjeto(testApp, ana, { name: 'Outro', description: 'Revisão da descrição' });
+      await criarProjeto(testApp, ana, { name: 'Sem relação' });
+
+      const nome = await listar(ana, '?search=integracao');
+      const descricao = await listar(ana, '?search=REVISAO');
+
+      expect(nome.body.data.map((p: { name: string }) => p.name)).toEqual(['Integração com ERP']);
+      expect(descricao.body.data.map((p: { name: string }) => p.name)).toEqual(['Outro']);
+    });
+
     it('trata % e _ da busca como texto literal, não como curingas', async () => {
       await criarProjeto(testApp, ana, { name: 'Meta 100% concluída' });
       await criarProjeto(testApp, ana, { name: 'Meta 1000 itens' });
@@ -353,6 +365,19 @@ describe('Projetos (e2e)', () => {
       expect(response.body.message).toBe(
         'O identificador informado é inválido.',
       );
+    });
+
+    it('projeto de outra pessoa devolve o mesmo 404 de um inexistente (D-027)', async () => {
+      const bruno = await criarUsuario(testApp, { name: 'Bruno' });
+      const alheio = await criarProjeto(testApp, bruno, { name: 'Do Bruno' });
+
+      const response = await testApp
+        .http()
+        .get(url(`/projects/${alheio.id}`))
+        .set(...bearer(ana.token));
+
+      expect(response.status).toBe(404);
+      expect(response.body.message).toBe('Projeto não encontrado.');
     });
 
     it('projeto inexistente devolve 404', async () => {

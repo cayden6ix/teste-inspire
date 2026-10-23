@@ -211,10 +211,11 @@ describe('Relatórios (e2e)', () => {
       expect(response.status).toBe(400);
     });
 
-    it('projeto do qual o usuário não faz parte devolve 403', async () => {
+    it('projeto do qual o usuário não faz parte devolve 404, como um inexistente (D-027)', async () => {
       const response = await relatorio(bruno, `?projectId=${beta.id}`);
 
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(404);
+      expect(response.body.message).toBe('Projeto não encontrado.');
     });
 
     it('projeto inexistente devolve 404', async () => {

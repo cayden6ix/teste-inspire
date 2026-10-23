@@ -17,6 +17,11 @@ import {
 
 const CABECALHO = 'titulo,descricao,status,responsavel_email,data_limite';
 
+/** BOM do UTF-8 que abre o CSV exportado (D-030). */
+const BOM = '\uFEFF';
+
+const MENSAGEM_NAO_CSV = 'O arquivo enviado não parece ser um CSV válido.';
+
 function fixture(nome: string): string {
   return readFileSync(new URL(`../fixtures/${nome}`, import.meta.url), 'utf8');
 }
@@ -104,10 +109,25 @@ describe('CSV: exportação e importação (e2e)', () => {
       expect(response.headers['content-disposition']).toBe(
         `attachment; filename="tarefas-${projeto.id}.csv"`,
       );
-      expect(response.text).toBe(`${CABECALHO}\n`);
+      expect(response.text).toBe(`${BOM}${CABECALHO}\n`);
     });
 
-    it('exporta todas as tarefas (sem paginar) com as colunas do contrato', async () => {
+    it('o arquivo começa com o BOM do UTF-8 (bytes EF BB BF), para o Excel em português', async () => {
+      await criarTarefa(testApp, ana, projeto.id, { title: 'Integração' });
+
+      const response = await exportar().buffer(true).parse((res, callback) => {
+        const partes: Buffer[] = [];
+        res.on('data', (parte: Buffer) => partes.push(parte));
+        res.on('end', () => callback(null, Buffer.concat(partes)));
+      });
+      const bytes = response.body as Buffer;
+
+      expect(bytes.subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]));
+      expect(bytes.toString('utf8')).toContain('Integração');
+      expect(response.headers['content-type']).toBe('text/csv; charset=utf-8');
+    });
+
+    it('exporta todas as tarefas (sem paginar), em ordem cronológica, com as colunas do contrato', async () => {
       await criarTarefa(testApp, ana, projeto.id, {
         title: 'Modelar o banco',
         description: 'Definir tabelas',
@@ -119,23 +139,24 @@ describe('CSV: exportação e importação (e2e)', () => {
 
       const response = await exportar();
 
-      const linhas = parse(response.text, { columns: true }) as Array<
+      const linhas = parse(response.text, { columns: true, bom: true }) as Array<
         Record<string, string>
       >;
+      // D-020: a exportação sai da mais antiga para a mais nova (a lista continua ao contrário).
       expect(linhas).toEqual([
-        {
-          titulo: 'Sem detalhes',
-          descricao: '',
-          status: 'pendente',
-          responsavel_email: '',
-          data_limite: '',
-        },
         {
           titulo: 'Modelar o banco',
           descricao: 'Definir tabelas',
           status: 'em_andamento',
           responsavel_email: 'bruno@empresa.com',
           data_limite: '2026-11-01',
+        },
+        {
+          titulo: 'Sem detalhes',
+          descricao: '',
+          status: 'pendente',
+          responsavel_email: '',
+          data_limite: '',
         },
       ]);
     });
@@ -150,7 +171,7 @@ describe('CSV: exportação e importação (e2e)', () => {
       const response = await exportar();
 
       expect(
-        (parse(response.text, { columns: true }) as unknown[]).length,
+        (parse(response.text, { columns: true, bom: true }) as unknown[]).length,
       ).toBe(130);
     });
 
@@ -213,7 +234,11 @@ describe('CSV: exportação e importação (e2e)', () => {
       expect(response.body.created).toBe(2);
       expect(response.body.errors).toEqual([
         { row: 3, message: 'O título é obrigatório.' },
-        { row: 4, message: 'Status inválido: feito.' },
+        {
+          row: 4,
+          message:
+            'Status inválido: "feito". Use: pendente, em_andamento ou concluida.',
+        },
         {
           row: 5,
           message:
@@ -274,6 +299,80 @@ describe('CSV: exportação e importação (e2e)', () => {
           dueDate: '2026-01-31',
         }),
       ]);
+    });
+
+    it('aceita variações de escrita no status (maiúsculas, espaços e acentos)', async () => {
+      const response = await importarCsvPuro(
+        `${CABECALHO}\nA,,Em Andamento,,\nB,,em andamento,,\nC,, PENDENTE ,,\nD,,Concluída,,\nE,,concluida,,\n`,
+      );
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({ created: 5, errors: [] });
+      expect((await listarTudo()).map((t) => [t.title, t.status])).toEqual([
+        ['A', 'em_andamento'],
+        ['B', 'em_andamento'],
+        ['C', 'pendente'],
+        ['D', 'concluida'],
+        ['E', 'concluida'],
+      ]);
+    });
+
+    it('cabeçalho sem a coluna "titulo" devolve 400 e não importa nada', async () => {
+      const response = await importarArquivo('foo,bar\n1,2\n3,4\n');
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe(
+        'Cabeçalho inválido: o CSV precisa ter a coluna "titulo" ' +
+          '(colunas aceitas: titulo, descricao, status, responsavel_email, data_limite).',
+      );
+      expect(await listarTudo()).toEqual([]);
+    });
+
+    it('aceita cabeçalho com acentos e maiúsculas e ignora colunas desconhecidas', async () => {
+      const response = await importarCsvPuro(
+        'Título,Descrição,Status,Data limite,observacao\nCom acento,desc,Pendente,2026-03-01,ignorada\n',
+      );
+
+      expect(response.body).toEqual({ created: 1, errors: [] });
+      expect(await listarTudo()).toEqual([
+        expect.objectContaining({
+          title: 'Com acento',
+          description: 'desc',
+          dueDate: '2026-03-01',
+        }),
+      ]);
+    });
+
+    it.each([
+      [
+        'imagem PNG',
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]),
+      ],
+      ['JSON', Buffer.from('[{"titulo": "A"}]', 'utf8')],
+    ])('arquivo que não é CSV (%s) devolve 400 com mensagem clara', async (_nome, conteudo) => {
+      const response = await importarArquivo(conteudo);
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe(MENSAGEM_NAO_CSV);
+      expect(await listarTudo()).toEqual([]);
+    });
+
+    it('arquivo só com o cabeçalho devolve 400 explicando que não há linhas', async () => {
+      const response = await importarArquivo(`${CABECALHO}\n`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe(
+        'O arquivo enviado não parece ser um CSV válido: não há nenhuma linha de tarefa depois do cabeçalho.',
+      );
+    });
+
+    it('quem não é membro recebe 404 antes de o arquivo ser analisado (não aprende nada sobre ele)', async () => {
+      const intruso = await criarUsuario(testApp, { name: 'Intruso' });
+
+      const response = await importarArquivo('foo,bar\n1,2\n', projeto.id, intruso);
+
+      expect(response.status).toBe(404);
+      expect(response.body.message).toBe('Projeto não encontrado.');
     });
 
     it('sem arquivo nem corpo devolve 400 com orientação', async () => {
@@ -358,6 +457,31 @@ describe('CSV: exportação e importação (e2e)', () => {
   });
 
   describe('exportar -> importar de volta', () => {
+    it('preserva a ordem relativa das tarefas: a lista da cópia fica igual à do original (D-020)', async () => {
+      for (const titulo of ['Primeira', 'Segunda', 'Terceira']) {
+        await criarTarefa(testApp, ana, projeto.id, { title: titulo });
+      }
+      const lista = async (projectId: string) =>
+        (
+          await testApp
+            .http()
+            .get(url(`/projects/${projectId}/tasks`))
+            .set(...bearer(ana.token))
+        ).body.data.map((t: { title: string }) => t.title);
+      const original = await exportar();
+
+      const copia = await criarProjeto(testApp, ana, { name: 'Cópia' });
+      await importarArquivo(original.text, copia.id);
+
+      expect(
+        (parse(original.text, { columns: true, bom: true }) as Array<Record<string, string>>).map(
+          (linha) => linha['titulo'],
+        ),
+      ).toEqual(['Primeira', 'Segunda', 'Terceira']);
+      expect(await lista(projeto.id)).toEqual(['Terceira', 'Segunda', 'Primeira']);
+      expect(await lista(copia.id)).toEqual(['Terceira', 'Segunda', 'Primeira']);
+    });
+
     const ordenar = (linhas: Array<Record<string, string>>) =>
       [...linhas].sort((a, b) =>
         (a['titulo'] ?? '').localeCompare(b['titulo'] ?? ''),
@@ -385,10 +509,10 @@ describe('CSV: exportação e importação (e2e)', () => {
       const reexportado = await exportar(copia.id);
 
       expect(importacao.body).toEqual({ created: 3, errors: [] });
-      const linhasOriginais = parse(original.text, { columns: true }) as Array<
+      const linhasOriginais = parse(original.text, { columns: true, bom: true }) as Array<
         Record<string, string>
       >;
-      const linhasCopia = parse(reexportado.text, { columns: true }) as Array<
+      const linhasCopia = parse(reexportado.text, { columns: true, bom: true }) as Array<
         Record<string, string>
       >;
       expect(ordenar(linhasCopia)).toEqual(ordenar(linhasOriginais));
@@ -411,8 +535,8 @@ describe('CSV: exportação e importação (e2e)', () => {
       await importarArquivo(original.text, copia.id);
       const reexportado = await exportar(copia.id);
 
-      expect(ordenar(parse(reexportado.text, { columns: true }))).toEqual(
-        ordenar(parse(original.text, { columns: true })),
+      expect(ordenar(parse(reexportado.text, { columns: true, bom: true }))).toEqual(
+        ordenar(parse(original.text, { columns: true, bom: true })),
       );
     });
   });

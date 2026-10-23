@@ -25,14 +25,16 @@ export class TasksRepository extends Repository<Task> {
   }
 
   /**
-   * Todas as tarefas do projeto (exportacao CSV), na mesma ordenacao deterministica
-   * da listagem paginada: createdAt desc, id desc.
+   * Todas as tarefas do projeto (exportacao CSV) em ordem CRONOLOGICA: createdAt asc,
+   * id asc (D-020). A importacao grava created_at crescente por linha, entao reimportar o
+   * arquivo exportado preserva a ordem relativa (a ultima linha e a mais nova). A
+   * listagem paginada continua do mais novo para o mais antigo.
    */
   findByProject(projectId: string): Promise<Task[]> {
     return this.find({
       where: { projectId },
       relations: { assignee: true },
-      order: { createdAt: 'DESC', id: 'DESC' },
+      order: { createdAt: 'ASC', id: 'ASC' },
     });
   }
 
@@ -58,9 +60,11 @@ export class TasksRepository extends Repository<Task> {
     }
 
     if (filters.search) {
-      query.andWhere('(task.title ILIKE :search OR task.description ILIKE :search)', {
-        search: `%${escapeLike(filters.search)}%`,
-      });
+      // Sem diferenciar maiusculas nem acentos (unaccent, D-029); curingas digitados sao literais.
+      query.andWhere(
+        '(unaccent(task.title) ILIKE unaccent(:search) OR unaccent(task.description) ILIKE unaccent(:search))',
+        { search: `%${escapeLike(filters.search)}%` },
+      );
     }
 
     if (filters.dueFrom) {

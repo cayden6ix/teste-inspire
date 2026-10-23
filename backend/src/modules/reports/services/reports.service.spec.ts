@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ProjectRole } from '../../../common/enums/project-role.enum.js';
 import { ProjectAccessService } from '../../projects/services/project-access.service.js';
@@ -99,11 +99,13 @@ describe('ReportsService', () => {
     });
 
     it('nega o relatório de um projeto do qual o usuário não faz parte', async () => {
-      accessService.requireRole.mockRejectedValue(new ForbiddenException());
+      accessService.requireRole.mockRejectedValue(
+        new NotFoundException('Projeto não encontrado.'),
+      );
 
       await expect(
         service.build(USER_ID, ReportGroupBy.Status, PROJECT_ID),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(tasksService.countByStatus).not.toHaveBeenCalled();
     });
   });

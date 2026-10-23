@@ -1,7 +1,10 @@
+import { ProjectRole } from '../../src/common/enums/project-role.enum.js';
 import { createTestApp, type TestApp } from '../utils/app.js';
 import { limparBanco } from '../utils/database.js';
 import {
+  adicionarMembro,
   bearer,
+  criarProjeto,
   criarUsuario,
   url,
   type UsuarioCriado,
@@ -9,6 +12,8 @@ import {
 
 const MENSAGEM_TERMO_CURTO =
   'Informe ao menos 3 caracteres no e-mail ou no nome para buscar usuários.';
+
+const MENSAGEM_SEM_PERMISSAO = 'Você não tem permissão para buscar usuários.';
 
 type Resultado = { id: string; name: string; email: string };
 
@@ -30,6 +35,8 @@ describe('Busca de usuários (e2e)', () => {
       name: 'Quem Busca',
       email: 'quem.busca@empresa.com',
     });
+    // D-028: só quem é owner ou admin de algum projeto pode buscar usuários.
+    await criarProjeto(testApp, solicitante, { name: 'Projeto de quem busca' });
     await criarUsuario(testApp, {
       name: 'Ana Souza',
       email: 'ana.souza@empresa.com',
@@ -53,7 +60,7 @@ describe('Busca de usuários (e2e)', () => {
   describe('R14: exige um termo de busca com ao menos 3 caracteres', () => {
     it.each([
       { nome: 'sem filtro', query: '' },
-      { nome: 'só paginação', query: '?page=1&limit=100' },
+      { nome: 'só paginação', query: '?page=1&limit=10' },
       { nome: 'nome com 2 caracteres', query: '?name=an' },
       { nome: 'e-mail com 2 caracteres', query: '?email=an' },
       { nome: 'nome só com espaços', query: '?name=%20%20%20%20' },
@@ -76,7 +83,7 @@ describe('Busca de usuários (e2e)', () => {
       expect(response.status).toBe(200);
       expect(response.body.meta).toEqual({
         page: 1,
-        limit: 15,
+        limit: 10,
         total: 2,
         totalPages: 1,
       });
@@ -156,8 +163,77 @@ describe('Busca de usuários (e2e)', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual({
         data: [],
-        meta: { page: 1, limit: 15, total: 0, totalPages: 0 },
+        meta: { page: 1, limit: 10, total: 0, totalPages: 0 },
       });
+    });
+  });
+
+  describe('D-028: quem pode buscar usuários', () => {
+    it('quem não participa de nenhum projeto recebe 403', async () => {
+      const semProjeto = await criarUsuario(testApp, { name: 'Sem Projeto' });
+
+      const response = await buscar('?name=ana', semProjeto);
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('FORBIDDEN');
+      expect(response.body.message).toBe(MENSAGEM_SEM_PERMISSAO);
+      expect(response.body).not.toHaveProperty('data');
+    });
+
+    it.each([ProjectRole.Member, ProjectRole.Viewer])(
+      'quem é só %s (em qualquer projeto) recebe 403',
+      async (papel) => {
+        const projeto = await criarProjeto(testApp, solicitante, { name: 'Com equipe' });
+        const colaborador = await criarUsuario(testApp, { name: 'Colaborador' });
+        await adicionarMembro(testApp, solicitante, projeto.id, colaborador, papel);
+
+        const response = await buscar('?name=ana', colaborador);
+
+        expect(response.status).toBe(403);
+        expect(response.body.message).toBe(MENSAGEM_SEM_PERMISSAO);
+      },
+    );
+
+    it('admin de um projeto (sem ser owner de nenhum) pode buscar', async () => {
+      const projeto = await criarProjeto(testApp, solicitante, { name: 'Com admin' });
+      const administrador = await criarUsuario(testApp, { name: 'Administrador' });
+      await adicionarMembro(
+        testApp,
+        solicitante,
+        projeto.id,
+        administrador,
+        ProjectRole.Admin,
+      );
+
+      const response = await buscar('?name=ana', administrador);
+
+      expect(response.status).toBe(200);
+      expect(response.body.meta.total).toBe(2);
+    });
+
+    it('a permissão é checada antes do termo: sem permissão e termo curto continua 403', async () => {
+      const semProjeto = await criarUsuario(testApp, { name: 'Sem Projeto' });
+
+      const response = await buscar('?name=an', semProjeto);
+
+      expect(response.status).toBe(403);
+    });
+  });
+
+  describe('busca sem diferenciar acentos (D-029)', () => {
+    it('"joao" encontra "João" e "conceicao" encontra "Conceição"', async () => {
+      await criarUsuario(testApp, { name: 'João Conceição', email: 'joao@acento.com' });
+
+      const semAcento = await buscar('?name=joao');
+      const comAcentoNoTermo = await buscar('?name=conceição');
+      const outraGrafia = await buscar('?name=CONCEICAO');
+
+      for (const response of [semAcento, comAcentoNoTermo, outraGrafia]) {
+        expect(response.status).toBe(200);
+        expect(response.body.data.map((u: Resultado) => u.name)).toEqual([
+          'João Conceição',
+        ]);
+      }
     });
   });
 
@@ -173,9 +249,31 @@ describe('Busca de usuários (e2e)', () => {
       expect(JSON.stringify(response.body)).not.toMatch(/password|\$2[aby]\$/);
     });
 
-    it('limit acima de 100 e sortBy fora da lista devolvem 400', async () => {
-      expect((await buscar('?name=ana&limit=101')).status).toBe(400);
+    it('limit acima de 10 (teto desta busca) e sortBy fora da lista devolvem 400', async () => {
+      const acimaDoTeto = await buscar('?name=ana&limit=11');
+
+      expect(acimaDoTeto.status).toBe(400);
+      expect(acimaDoTeto.body.message).toEqual([
+        'O campo "Limite" deve ser menor ou igual a 10.',
+      ]);
+      expect((await buscar('?name=ana&limit=100')).status).toBe(400);
+      expect((await buscar('?name=ana&limit=10')).status).toBe(200);
       expect((await buscar('?name=ana&sortBy=password')).status).toBe(400);
+    });
+
+    it('sem limit, a página traz no máximo 10 usuários', async () => {
+      for (let indice = 0; indice < 12; indice += 1) {
+        await criarUsuario(testApp, {
+          name: `Pessoa Lote ${indice}`,
+          email: `pessoa.lote${indice}@lote.com`,
+        });
+      }
+
+      const response = await buscar('?email=lote.com');
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveLength(10);
+      expect(response.body.meta).toEqual({ page: 1, limit: 10, total: 12, totalPages: 2 });
     });
 
     it('sem token devolve 401', async () => {

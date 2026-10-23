@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { PaginationParams } from '../../../common/dto/paginated.dto.js';
 import { ProjectRole } from '../../../common/enums/project-role.enum.js';
 import { escapeLike } from '../../../common/utils/like.util.js';
@@ -53,9 +53,11 @@ export class ProjectMembersRepository extends Repository<ProjectMember> {
       .where('member.userId = :userId', { userId });
 
     if (filters.search) {
-      query.andWhere('(project.name ILIKE :search OR project.description ILIKE :search)', {
-        search: `%${escapeLike(filters.search)}%`,
-      });
+      // Sem diferenciar maiusculas nem acentos (unaccent, D-029); curingas digitados sao literais.
+      query.andWhere(
+        '(unaccent(project.name) ILIKE unaccent(:search) OR unaccent(project.description) ILIKE unaccent(:search))',
+        { search: `%${escapeLike(filters.search)}%` },
+      );
     }
 
     return query
@@ -68,6 +70,11 @@ export class ProjectMembersRepository extends Repository<ProjectMember> {
 
   findByProjectAndUser(projectId: string, userId: string): Promise<ProjectMember | null> {
     return this.findOne({ where: { projectId, userId } });
+  }
+
+  /** O usuario tem algum vinculo com um dos papeis informados (em qualquer projeto)? */
+  existsByUserWithRoles(userId: string, roles: readonly ProjectRole[]): Promise<boolean> {
+    return this.exists({ where: { userId, role: In([...roles]) } });
   }
 
   /** Ids dos projetos em que o usuario e membro (qualquer papel). */

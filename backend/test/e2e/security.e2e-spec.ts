@@ -107,7 +107,7 @@ describe('Segurança e contrato transversal (e2e)', () => {
         'ProjectsController',
         'ReportsController',
         'TasksController',
-        'UsersController',
+        'UserSearchController',
       ]);
     });
 

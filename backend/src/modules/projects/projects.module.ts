@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from '../users/users.module.js';
 import { ProjectMembersController } from './controllers/project-members.controller.js';
 import { ProjectsController } from './controllers/projects.controller.js';
+import { UserSearchController } from './controllers/user-search.controller.js';
 import { ProjectMember } from './entities/project-member.entity.js';
 import { Project } from './entities/project.entity.js';
 import { ProjectMembersRepository } from './repositories/project-members.repository.js';
@@ -13,7 +14,8 @@ import { ProjectsService } from './services/projects.service.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Project, ProjectMember]), UsersModule],
-  controllers: [ProjectsController, ProjectMembersController],
+  // UserSearchController: GET /users, a busca de quem adicionar como membro (D-028).
+  controllers: [ProjectsController, ProjectMembersController, UserSearchController],
   providers: [
     ProjectsRepository,
     ProjectMembersRepository,

@@ -307,7 +307,7 @@ describe('CSV em lote e proteção de fórmulas (e2e)', () => {
 
       const response = await exportar();
 
-      const linhas = parse(response.text, { columns: true }) as Array<
+      const linhas = parse(response.text, { columns: true, bom: true }) as Array<
         Record<string, string>
       >;
       expect(linhas).toHaveLength(TEXTOS_PERIGOSOS.length);
@@ -326,7 +326,7 @@ describe('CSV em lote e proteção de fórmulas (e2e)', () => {
       });
 
       const [linha] = parse((await exportar()).text, {
-        columns: true,
+        columns: true, bom: true,
       }) as Array<Record<string, string>>;
 
       expect(linha).toMatchObject({
@@ -383,7 +383,7 @@ describe('CSV em lote e proteção de fórmulas (e2e)', () => {
       const terceira = await exportar(copia2.id);
 
       const ordenar = (texto: string) =>
-        (parse(texto, { columns: true }) as Array<Record<string, string>>)
+        (parse(texto, { columns: true, bom: true }) as Array<Record<string, string>>)
           .map((linha) => linha['titulo'])
           .sort();
       expect(ordenar(segunda.text)).toEqual(ordenar(original.text));
@@ -396,7 +396,7 @@ describe('CSV em lote e proteção de fórmulas (e2e)', () => {
       await importar(csv);
       const response = await exportar();
 
-      const [linha] = parse(response.text, { columns: true }) as Array<
+      const [linha] = parse(response.text, { columns: true, bom: true }) as Array<
         Record<string, string>
       >;
       expect(linha?.['titulo']).toBe("'=2+2");

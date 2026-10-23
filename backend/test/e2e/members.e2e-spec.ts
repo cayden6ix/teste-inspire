@@ -263,7 +263,9 @@ describe('Membros do projeto (e2e)', () => {
         .set(...bearer(bruno.token));
 
       expect(remocao.status).toBe(204);
-      expect(acesso.status).toBe(403);
+      // Ex-membro passa a ver o projeto como inexistente (D-027).
+      expect(acesso.status).toBe(404);
+      expect(acesso.body.message).toBe('Projeto não encontrado.');
     });
 
     it('usuário que não é membro devolve 404', async () => {

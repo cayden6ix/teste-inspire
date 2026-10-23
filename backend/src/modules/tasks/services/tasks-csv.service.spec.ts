@@ -1,7 +1,15 @@
+import { BadRequestException } from '@nestjs/common';
 import { parse } from 'csv-parse/sync';
 import { TaskStatus } from '../../../common/enums/task-status.enum.js';
 import type { Task } from '../entities/task.entity.js';
-import { TasksCsvService } from './tasks-csv.service.js';
+import {
+  CSV_NO_DATA_MESSAGE,
+  CSV_NOT_CSV_MESSAGE,
+  normalizeCsvKey,
+  TasksCsvService,
+} from './tasks-csv.service.js';
+
+const BOM = '\uFEFF';
 
 function tarefa(dados: Partial<Task>): Task {
   return {
@@ -19,9 +27,17 @@ describe('TasksCsvService', () => {
   const service = new TasksCsvService();
 
   describe('toCsv', () => {
-    it('gera apenas o cabeçalho quando não há tarefas', () => {
+    it('gera apenas o cabeçalho (com BOM) quando não há tarefas', () => {
       expect(service.toCsv([])).toBe(
-        'titulo,descricao,status,responsavel_email,data_limite\n',
+        `${BOM}titulo,descricao,status,responsavel_email,data_limite\n`,
+      );
+    });
+
+    it('começa com o BOM do UTF-8, para o Excel reconhecer os acentos (D-030)', () => {
+      const csv = service.toCsv([tarefa({ title: 'Integração' })]);
+
+      expect(Buffer.from(csv, 'utf8').subarray(0, 3)).toEqual(
+        Buffer.from([0xef, 0xbb, 0xbf]),
       );
     });
 
@@ -37,7 +53,7 @@ describe('TasksCsvService', () => {
       ]);
 
       expect(csv).toBe(
-        'titulo,descricao,status,responsavel_email,data_limite\n' +
+        `${BOM}titulo,descricao,status,responsavel_email,data_limite\n` +
           'Modelar o banco,Definir tabelas,em_andamento,bruno@empresa.com,2026-11-01\n',
       );
     });
@@ -58,7 +74,7 @@ describe('TasksCsvService', () => {
 
       expect(csv).toContain('"Título, com vírgula"');
       expect(csv).toContain('"Ele disse ""oi""\nsegunda linha"');
-      const [linha] = parse(csv, { columns: true }) as Array<
+      const [linha] = parse(csv, { columns: true, bom: true }) as Array<
         Record<string, string>
       >;
       expect(linha?.['titulo']).toBe('Título, com vírgula');
@@ -67,17 +83,76 @@ describe('TasksCsvService', () => {
   });
 
   describe('parse', () => {
-    it('devolve lista vazia para texto vazio ou só espaços', () => {
-      expect(service.parse('')).toEqual([]);
-      expect(service.parse('  \n \n')).toEqual([]);
+    /** Mensagem do 400 lançado por `parse` (falha o teste se não lançar). */
+    const erroDe = (texto: string): string => {
+      try {
+        service.parse(texto);
+      } catch (error) {
+        expect(error).toBeInstanceOf(BadRequestException);
+        return (error as BadRequestException).message;
+      }
+      throw new Error('parse deveria ter recusado o arquivo.');
+    };
+
+    it('recusa arquivo só com o cabeçalho: nenhuma linha de dados (D-030)', () => {
+      expect(
+        erroDe('titulo,descricao,status,responsavel_email,data_limite\n'),
+      ).toBe(CSV_NO_DATA_MESSAGE);
     });
 
-    it('devolve lista vazia quando há só o cabeçalho', () => {
-      expect(
-        service.parse(
-          'titulo,descricao,status,responsavel_email,data_limite\n',
-        ),
-      ).toEqual([]);
+    it('recusa cabeçalho sem a coluna "titulo", listando as colunas aceitas', () => {
+      expect(erroDe('foo,bar\n1,2\n')).toBe(
+        'Cabeçalho inválido: o CSV precisa ter a coluna "titulo" ' +
+          '(colunas aceitas: titulo, descricao, status, responsavel_email, data_limite).',
+      );
+      expect(erroDe('  \n \n')).toBe(TasksCsvService.HEADER_INVALID_MESSAGE);
+      expect(erroDe('uma linha de texto qualquer')).toBe(
+        TasksCsvService.HEADER_INVALID_MESSAGE,
+      );
+    });
+
+    it.each([
+      ['PNG (bytes nulos)', '\u0089PNG\r\n\u001a\n\u0000\u0000\u0000\rIHDR'],
+      ['texto com byte nulo', 'titulo\nA\u0000B\n'],
+      ['JSON (objeto)', '{"titulo": "A"}'],
+      ['JSON (lista)', '  [{"titulo": "A"}]'],
+      ['aspas quebradas', 'titulo,descricao\n"sem fechar,x\n'],
+    ])('recusa arquivo que não é CSV: %s', (_nome, texto) => {
+      expect(erroDe(texto)).toBe(CSV_NOT_CSV_MESSAGE);
+    });
+
+    it('normaliza os nomes das colunas (maiúsculas, acentos, espaços) e mantém as desconhecidas fora do uso', () => {
+      const rows = service.parse(
+        ' Título ,Descrição,STATUS,Responsável_Email,Data limite,extra\n' +
+          'A,desc,pendente,ana@empresa.com,2026-11-01,ignorada\n',
+      );
+
+      expect(rows).toEqual([
+        {
+          titulo: 'A',
+          descricao: 'desc',
+          status: 'pendente',
+          responsavel_email: 'ana@empresa.com',
+          data_limite: '2026-11-01',
+          extra: 'ignorada',
+        },
+      ]);
+    });
+
+    it('aceita de volta o arquivo exportado (com BOM): ciclo completo', () => {
+      const csv = service.toCsv([
+        tarefa({ title: 'Integração', description: 'Descrição' }),
+      ]);
+
+      expect(service.parse(csv)).toEqual([
+        {
+          titulo: 'Integração',
+          descricao: 'Descrição',
+          status: 'pendente',
+          responsavel_email: '',
+          data_limite: '',
+        },
+      ]);
     });
 
     it('lê as linhas indexadas pelo cabeçalho e ignora linhas vazias', () => {
@@ -110,12 +185,28 @@ describe('TasksCsvService', () => {
   });
 });
 
+describe('normalizeCsvKey', () => {
+  it.each([
+    ['Em Andamento', 'em_andamento'],
+    ['em andamento', 'em_andamento'],
+    ['em-andamento', 'em_andamento'],
+    [' PENDENTE ', 'pendente'],
+    ['Concluída', 'concluida'],
+    ['concluida', 'concluida'],
+    ['Título', 'titulo'],
+    ['Data   limite', 'data_limite'],
+    ['', ''],
+  ])('%j vira %j', (entrada, esperado) => {
+    expect(normalizeCsvKey(entrada)).toBe(esperado);
+  });
+});
+
 describe('TasksCsvService: proteção contra injeção de fórmula (R08)', () => {
   const service = new TasksCsvService();
 
   const exportado = (dados: Partial<Task>) =>
     (
-      parse(service.toCsv([tarefa(dados)]), { columns: true }) as Array<
+      parse(service.toCsv([tarefa(dados)]), { columns: true, bom: true }) as Array<
         Record<string, string>
       >
     )[0] ?? {};

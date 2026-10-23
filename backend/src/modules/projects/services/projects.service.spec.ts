@@ -31,7 +31,7 @@ describe('ProjectsService', () => {
     delete: vi.fn(),
   };
   const membersRepository = { findPageByUser: vi.fn() };
-  const accessService = { requireRole: vi.fn(), getRole: vi.fn() };
+  const accessService = { requireRole: vi.fn() };
 
   beforeEach(async () => {
     vi.resetAllMocks();
@@ -117,7 +117,8 @@ describe('ProjectsService', () => {
   });
 
   describe('findOneForUser', () => {
-    it('devolve 404 para projeto inexistente', async () => {
+    it('devolve 404 quando o projeto some depois da checagem de acesso', async () => {
+      accessService.requireRole.mockResolvedValue(ProjectRole.Viewer);
       projectsRepository.findOne.mockResolvedValue(null);
 
       await expect(
@@ -125,20 +126,27 @@ describe('ProjectsService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('devolve 403 para quem não é membro', async () => {
-      projectsRepository.findOne.mockResolvedValue(projeto());
-      accessService.getRole.mockResolvedValue(null);
+    it('quem não é membro recebe o 404 do acesso, sem carregar o projeto (D-027)', async () => {
+      accessService.requireRole.mockRejectedValue(
+        new NotFoundException('Projeto não encontrado.'),
+      );
 
       await expect(
         service.findOneForUser(PROJECT_ID, USER_ID),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toThrow('Projeto não encontrado.');
+      expect(accessService.requireRole).toHaveBeenCalledWith(
+        PROJECT_ID,
+        USER_ID,
+        [ProjectRole.Owner, ProjectRole.Admin, ProjectRole.Member, ProjectRole.Viewer],
+      );
+      expect(projectsRepository.findOne).not.toHaveBeenCalled();
     });
 
     it('devolve o projeto com o papel do usuário', async () => {
       projectsRepository.findOne.mockResolvedValue(
         projeto({ description: 'Texto' }),
       );
-      accessService.getRole.mockResolvedValue(ProjectRole.Viewer);
+      accessService.requireRole.mockResolvedValue(ProjectRole.Viewer);
 
       await expect(
         service.findOneForUser(PROJECT_ID, USER_ID),
@@ -184,6 +192,18 @@ describe('ProjectsService', () => {
       expect(result.description).toBeNull();
     });
 
+    it('checa o acesso antes de carregar o projeto: não-membro recebe 404 sem consulta', async () => {
+      accessService.requireRole.mockRejectedValue(
+        new NotFoundException('Projeto não encontrado.'),
+      );
+
+      await expect(
+        service.update(PROJECT_ID, USER_ID, { name: 'X' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(projectsRepository.findOne).not.toHaveBeenCalled();
+      expect(projectsRepository.save).not.toHaveBeenCalled();
+    });
+
     it('não grava quando o papel não permite', async () => {
       projectsRepository.findOne.mockResolvedValue(projeto());
       accessService.requireRole.mockRejectedValue(new ForbiddenException());
@@ -220,12 +240,15 @@ describe('ProjectsService', () => {
       expect(projectsRepository.delete).not.toHaveBeenCalled();
     });
 
-    it('devolve 404 quando o projeto não existe', async () => {
-      projectsRepository.findOne.mockResolvedValue(null);
+    it('devolve o 404 do acesso quando o projeto não existe (ou não é do usuário)', async () => {
+      accessService.requireRole.mockRejectedValue(
+        new NotFoundException('Projeto não encontrado.'),
+      );
 
       await expect(service.remove(PROJECT_ID, USER_ID)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+      expect(projectsRepository.delete).not.toHaveBeenCalled();
     });
   });
 });

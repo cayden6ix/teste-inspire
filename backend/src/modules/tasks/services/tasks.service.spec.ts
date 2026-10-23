@@ -264,7 +264,8 @@ describe('TasksService', () => {
 
       const csv = await service.exportCsv(PROJECT_ID, ACTOR_ID);
 
-      expect(csv).toBe(`${CABECALHO}\nExportada,,pendente,,\n`);
+      // UTF-8 com BOM (D-030), para o Excel reconhecer os acentos.
+      expect(csv).toBe(`\uFEFF${CABECALHO}\nExportada,,pendente,,\n`);
       expect(accessService.requireRole).toHaveBeenCalledWith(
         PROJECT_ID,
         ACTOR_ID,
@@ -295,11 +296,29 @@ describe('TasksService', () => {
       expect(tasksRepository.insertInBatches).not.toHaveBeenCalled();
     });
 
-    it('arquivo só com cabeçalho não cria nada nem chama o banco', async () => {
-      const result = await importar([]);
-
-      expect(result).toEqual({ created: 0, errors: [] });
+    it('arquivo só com cabeçalho é 400 e não chama o banco', async () => {
+      await expect(importar([])).rejects.toThrow(
+        'O arquivo enviado não parece ser um CSV válido: não há nenhuma linha de tarefa depois do cabeçalho.',
+      );
+      expect(accessService.getMemberIdsByEmail).not.toHaveBeenCalled();
       expect(tasksRepository.insertInBatches).not.toHaveBeenCalled();
+    });
+
+    it('cabeçalho sem "titulo" é 400, checado só depois da permissão', async () => {
+      const promise = service.importCsv(PROJECT_ID, ACTOR_ID, 'foo,bar\n1,2\n');
+
+      await expect(promise).rejects.toBeInstanceOf(BadRequestException);
+      await expect(promise).rejects.toThrow(/^Cabeçalho inválido/);
+      expect(accessService.requireRole).toHaveBeenCalled();
+      expect(tasksRepository.insertInBatches).not.toHaveBeenCalled();
+    });
+
+    it('quem não pode importar recebe o erro de acesso antes da análise do arquivo', async () => {
+      accessService.requireRole.mockRejectedValue(new ForbiddenException());
+
+      await expect(
+        service.importCsv(PROJECT_ID, ACTOR_ID, '\u0000binario'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('rejeita linha sem título, com o número da linha do arquivo', async () => {
@@ -315,9 +334,36 @@ describe('TasksService', () => {
       const result = await importar(['A,,feito,,']);
 
       expect(result.errors).toEqual([
-        { row: 2, message: 'Status inválido: feito.' },
+        {
+          row: 2,
+          message:
+            'Status inválido: "feito". Use: pendente, em_andamento ou concluida.',
+        },
       ]);
       expect(tasksRepository.insertInBatches).not.toHaveBeenCalled();
+    });
+
+    it('aceita variações de escrita do status (maiúsculas, espaços, acento, hífen)', async () => {
+      const result = await importar([
+        'A,,Em Andamento,,',
+        'B,,em andamento,,',
+        'C,, PENDENTE ,,',
+        'D,,Concluída,,',
+        'E,,concluida,,',
+        'F,,em-andamento,,',
+      ]);
+
+      expect(result).toEqual({ created: 6, errors: [] });
+      const salvas = tasksRepository.insertInBatches.mock
+        .calls[0]?.[0] as Array<Record<string, unknown>>;
+      expect(salvas.map((t) => t['status'])).toEqual([
+        TaskStatus.EmAndamento,
+        TaskStatus.EmAndamento,
+        TaskStatus.Pendente,
+        TaskStatus.Concluida,
+        TaskStatus.Concluida,
+        TaskStatus.EmAndamento,
+      ]);
     });
 
     it('rejeita data limite fora do formato AAAA-MM-DD', async () => {
@@ -374,7 +420,11 @@ describe('TasksService', () => {
       expect(result.created).toBe(3);
       expect(result.errors).toEqual([
         { row: 3, message: 'O título é obrigatório.' },
-        { row: 5, message: 'Status inválido: inexistente.' },
+        {
+          row: 5,
+          message:
+            'Status inválido: "inexistente". Use: pendente, em_andamento ou concluida.',
+        },
       ]);
 
       const salvas = tasksRepository.insertInBatches.mock

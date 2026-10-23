@@ -201,14 +201,33 @@ describe('Autorização e IDOR (e2e)', () => {
   };
 
   describe('usuário sem vínculo com o projeto (IDOR)', () => {
-    it.each(NOMES_DAS_ROTAS)('%s devolve 403', async (nome) => {
+    // D-027: para quem não é membro, o projeto alheio é indistinguível de um id inexistente.
+    it.each(NOMES_DAS_ROTAS)('%s devolve 404 "Projeto não encontrado."', async (nome) => {
       const rota = rotas().find((candidata) => candidata.nome === nome)!;
 
       const response = await chamar(rota, intruso);
 
-      expect(response.status).toBe(403);
-      expect(response.body.message).toBe('Você não faz parte deste projeto.');
+      expect(response.status).toBe(404);
+      expect(response.body.error).toBe('NOT_FOUND');
+      expect(response.body.message).toBe('Projeto não encontrado.');
     });
+
+    it.each(NOMES_DAS_ROTAS)(
+      '%s: projeto alheio e projeto inexistente têm a mesma resposta (status e mensagem)',
+      async (nome) => {
+        const rota = rotas().find((candidata) => candidata.nome === nome)!;
+        const caminhoInexistente = rota.caminho.split(projeto.id).join(randomUUID());
+
+        const alheio = await chamar(rota, intruso);
+        const inexistente = await chamar(
+          { ...rota, caminho: caminhoInexistente } as Rota,
+          intruso,
+        );
+
+        expect(inexistente.status).toBe(alheio.status);
+        expect(inexistente.body.message).toBe(alheio.body.message);
+      },
+    );
 
     it('depois de todas as tentativas, os dados do dono estão intactos', async () => {
       for (const rota of rotas()) {
@@ -435,7 +454,7 @@ describe('Autorização e IDOR (e2e)', () => {
         .get(url(`/projects/${outroProjeto.id}`))
         .set(...bearer(intruso.token));
 
-      expect(comoDono.status).toBe(403);
+      expect(comoDono.status).toBe(404);
       expect(comoIntruso.status).toBe(200);
     });
 
