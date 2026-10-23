@@ -1,0 +1,5 @@
+titulo,descricao,status,responsavel_email,data_limite
+Modelar o banco,Definir tabelas e relacionamentos,em_andamento,bruno@empresa.com,2026-11-01
+Escrever testes,"Unitários, e2e e CI",pendente,ana@empresa.com,
+Configurar CI,,,,2026-10-30
+Publicar release,Gerar a tag,concluida,,

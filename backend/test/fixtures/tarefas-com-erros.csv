@@ -1,0 +1,8 @@
+titulo,descricao,status,responsavel_email,data_limite
+Linha válida 1,ok,pendente,,
+,sem título,pendente,,
+Status ruim,,feito,,
+Data ruim,,pendente,,31/12/2026
+Responsável inexistente,,pendente,fantasma@empresa.com,
+Responsável de fora,,pendente,forasteiro@empresa.com,
+Linha válida 2,ok,concluida,ana@empresa.com,2026-12-31
