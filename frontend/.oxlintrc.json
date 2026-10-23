@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "jsx-a11y", "typescript", "unicorn", "oxc", "vitest"],
+  "env": {
+    "browser": true
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    "react/react-in-jsx-scope": "off",
+    // Desligada de proposito (D-034): ela pede <output> no lugar de role="status" (regioes
+    // aria-live de carregamento e toasts, que nao sao resultado de formulario), <dialog> no
+    // lugar do Modal (foco, pilha e animacao proprios) e <progress> na barra indeterminada.
+    // Os papeis ARIA usados sao os recomendados pelo WAI-ARIA APG para esses componentes.
+    "jsx-a11y/prefer-tag-over-role": "off"
+  }
+}
