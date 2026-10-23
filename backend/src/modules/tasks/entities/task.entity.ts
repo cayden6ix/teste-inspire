@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -14,10 +15,15 @@ import { Project } from '../../projects/entities/project.entity.js';
 /**
  * Tarefa do projeto (D-011): sempre pertence a um projeto e so e acessada
  * no contexto dele.
+ *
+ * `status` usa enum nativo do Postgres (`task_status`), com default `pendente` (D-016).
+ * Os indices estao descritos em D-017.
  */
 @Entity('tasks')
+@Index('IDX_tasks_project_id_created_at_id', ['projectId', 'createdAt', 'id'])
+@Index('IDX_tasks_assignee_id', ['assigneeId'])
 export class Task {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn('uuid', { primaryKeyConstraintName: 'PK_tasks' })
   id: string;
 
   @Column({ name: 'project_id', type: 'uuid' })
@@ -29,7 +35,12 @@ export class Task {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  @Column({ type: 'varchar', default: TaskStatus.Pendente })
+  @Column({
+    type: 'enum',
+    enum: TaskStatus,
+    enumName: 'task_status',
+    default: TaskStatus.Pendente,
+  })
   status: TaskStatus;
 
   @Column({ name: 'assignee_id', type: 'uuid', nullable: true })
@@ -45,10 +56,10 @@ export class Task {
   updatedAt: Date;
 
   @ManyToOne(() => Project, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'project_id' })
+  @JoinColumn({ name: 'project_id', foreignKeyConstraintName: 'FK_tasks_project' })
   project: Project;
 
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'assignee_id' })
+  @JoinColumn({ name: 'assignee_id', foreignKeyConstraintName: 'FK_tasks_assignee' })
   assignee: User | null;
 }

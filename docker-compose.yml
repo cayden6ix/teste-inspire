@@ -1,5 +1,19 @@
 name: api-projetos-tarefas
 
+# Imagem unica do backend, usada pelo servico `migrate` (one-shot) e pela API.
+# O build fica so no `backend`; o `migrate` reaproveita a mesma tag, entao a
+# imagem e construida uma unica vez.
+x-backend-image: &backend-image api-projetos-tarefas/backend:local
+
+# Ambiente comum a API e as migrations.
+x-backend-env: &backend-env
+  # Imagem de producao roda como producao. O SSL do banco e decidido por
+  # DATABASE_SSL (o Postgres do compose nao oferece SSL), e nao pelo NODE_ENV.
+  NODE_ENV: production
+  DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app_db}
+  DATABASE_SSL: ${DATABASE_SSL:-false}
+  DATABASE_LOGGING: '${DATABASE_LOGGING:-false}'
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -19,29 +33,50 @@ services:
       timeout: 5s
       retries: 10
 
+  # Aplica as migrations pendentes e encerra (D-018: migration fora do boot da API).
+  # A API so sobe depois que este servico termina com sucesso.
+  migrate:
+    image: *backend-image
+    container_name: api-migrate
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *backend-env
+    command: ['npm', 'run', 'migration:run']
+    healthcheck:
+      disable: true
+
   backend:
+    image: *backend-image
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
     container_name: api-backend
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
-      NODE_ENV: production
+      <<: *backend-env
       PORT: 3000
       API_PREFIX: api
-      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app_db}
-      # FASE 1 (D-002): schema criado a partir das entidades, sem migrations.
-      # Trocar para false assim que as migrations entrarem (FASE 2).
-      DATABASE_SYNCHRONIZE: '${DATABASE_SYNCHRONIZE:-true}'
-      DATABASE_LOGGING: '${DATABASE_LOGGING:-false}'
-      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no arquivo .env da raiz}
+      # Schema gerenciado por migrations (D-002, D-018), aplicadas pelo servico `migrate`.
+      DATABASE_SYNCHRONIZE: 'false'
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no arquivo .env da raiz (veja .env.example)}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?defina JWT_REFRESH_SECRET no arquivo .env da raiz}
-      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      SWAGGER_ENABLED: '${SWAGGER_ENABLED:-true}'
+      # Padrao 1 so no compose (no app o padrao e false): a API fica atras do nginx
+      # do frontend, e sem confiar nesse salto todo o trafego cairia num unico balde
+      # do rate limit (IP do nginx). Com 1, o IP real vem do X-Forwarded-For.
+      TRUST_PROXY: '${TRUST_PROXY:-1}'
+      THROTTLE_DISABLED: '${THROTTLE_DISABLED:-false}'
+      THROTTLE_TTL_SECONDS: ${THROTTLE_TTL_SECONDS:-60}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-100}
+      THROTTLE_AUTH_LOGIN_LIMIT: ${THROTTLE_AUTH_LOGIN_LIMIT:-10}
+      THROTTLE_AUTH_REGISTER_LIMIT: ${THROTTLE_AUTH_REGISTER_LIMIT:-5}
     ports:
       - '${BACKEND_PORT:-3000}:3000'
 

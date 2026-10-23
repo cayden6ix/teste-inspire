@@ -3,15 +3,17 @@ import {
   CreateDateColumn,
   Entity,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 
 @Entity('users')
+@Unique('UQ_users_email', ['email'])
 export class User {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn('uuid', { primaryKeyConstraintName: 'PK_users' })
   id: string;
 
-  @Column({ unique: true })
+  @Column()
   email: string;
 
   @Column()

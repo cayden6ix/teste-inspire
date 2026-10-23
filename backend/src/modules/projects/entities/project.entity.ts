@@ -8,7 +8,7 @@ import {
 
 @Entity('projects')
 export class Project {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn('uuid', { primaryKeyConstraintName: 'PK_projects' })
   id: string;
 
   @Column()
