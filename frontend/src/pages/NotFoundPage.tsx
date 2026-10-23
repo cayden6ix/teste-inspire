@@ -1,12 +1,14 @@
-import { Link } from 'react-router-dom';
+import { ButtonLink } from '@/components/ui/Button';
+import { Page } from '@/components/ui/Page';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export function NotFoundPage() {
   return (
-    <section className="space-y-4">
-      <h1 className="text-2xl font-semibold">Pagina nao encontrada</h1>
-      <Link className="text-blue-600 underline" to="/">
-        Voltar para o inicio
-      </Link>
-    </section>
+    <Page>
+      <PageHeader
+        title="Página não encontrada"
+        actions={<ButtonLink to="/">Voltar para o início</ButtonLink>}
+      />
+    </Page>
   );
 }

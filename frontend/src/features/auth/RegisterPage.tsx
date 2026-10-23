@@ -1,8 +1,13 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Alert } from '@/components/ui/Alert';
+import { Button } from '@/components/ui/Button';
+import { FormField, Input } from '@/components/ui/Field';
 import { register } from './auth.service';
 import { useAuthStore } from '@/stores/authStore';
+import { useToast } from '@/stores/toastStore';
+import { errorMessage } from '@/utils/errorMessage';
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -12,6 +17,7 @@ export function RegisterPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const toast = useToast();
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -20,68 +26,58 @@ export function RegisterPage() {
     try {
       const res = await register({ name, email, password });
       setAccessToken(res.access_token);
+      toast.success('Conta criada com sucesso.');
       navigate('/');
     } catch (err) {
-      setError('Falha ao cadastrar. Verifique os dados.');
+      // A mensagem da API (ex.: 409 'Este e-mail já está cadastrado.', 429, validação) vence o texto genérico.
+      setError(errorMessage(err, 'Falha ao cadastrar. Verifique os dados.', { anonymous: true }));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <section className="mx-auto max-w-md">
-      <h1 className="mb-6 text-2xl font-semibold">Cadastrar</h1>
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div>
-          <label className="mb-1 block text-sm text-slate-700" htmlFor="name">
-            Nome
-          </label>
-          <input
+    <section className="flex w-full flex-col gap-6">
+      <h1 className="text-title font-semibold text-slate-900">Cadastrar</h1>
+      <form onSubmit={onSubmit} className="grid gap-4 md:grid-cols-2">
+        <FormField label="Nome" htmlFor="name">
+          <Input
             id="name"
             type="text"
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded border border-slate-300 px-3 py-2"
           />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm text-slate-700" htmlFor="email">
-            E-mail
-          </label>
-          <input
+        </FormField>
+        <FormField label="E-mail" htmlFor="email">
+          <Input
             id="email"
             type="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded border border-slate-300 px-3 py-2"
           />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm text-slate-700" htmlFor="password">
-            Senha (mínimo 6)
-          </label>
-          <input
+        </FormField>
+        <FormField label="Senha (mínimo 6)" htmlFor="password" className="md:col-span-2">
+          <Input
             id="password"
             type="password"
             minLength={6}
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded border border-slate-300 px-3 py-2"
           />
-        </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded bg-slate-900 px-4 py-2 text-white disabled:opacity-60"
-        >
-          {loading ? 'Cadastrando...' : 'Cadastrar'}
-        </button>
+        </FormField>
+        {error ? (
+          <div className="md:col-span-2">
+            <Alert>{error}</Alert>
+          </div>
+        ) : null}
+        <Button type="submit" loading={loading} loadingLabel="Cadastrando…" className="w-full md:col-span-2">
+          Cadastrar
+        </Button>
       </form>
-      <p className="mt-4 text-sm text-slate-600">
+      <p className="text-body text-slate-600">
         Já tem conta?{' '}
         <Link to="/login" className="text-slate-900 underline">
           Entrar

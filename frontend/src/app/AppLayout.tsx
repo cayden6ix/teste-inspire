@@ -1,55 +1,66 @@
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Button, buttonClass } from '@/components/ui/Button';
+import { PageTransition } from '@/components/ui/PageTransition';
 import { useAuthStore } from '@/stores/authStore';
+import { useToast } from '@/stores/toastStore';
 
 /**
- * Layout raiz da aplicacao: cabecalho + area de conteudo das rotas aninhadas.
+ * Layout raiz da aplicacao: cabecalho + area de conteudo das rotas aninhadas,
+ * ambos em largura total com a margem lateral padrao (px-gutter).
  */
 export function AppLayout() {
   const navigate = useNavigate();
   const accessToken = useAuthStore((s) => s.accessToken);
   const logout = useAuthStore((s) => s.logout);
+  const toast = useToast();
 
   function handleLogout() {
     logout();
+    toast.success('Você saiu da sessão.');
     navigate('/');
   }
 
+  const navClass = ({ isActive }: { isActive: boolean }) =>
+    buttonClass({ variant: isActive ? 'secondary' : 'ghost', className: 'max-sm:flex-1' });
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="flex min-h-screen animate-fade-in flex-col bg-slate-50 text-slate-900">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link to="/" className="text-lg font-semibold">
-            Gestao de Projetos e Tarefas
+        <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-3 px-gutter py-3">
+          <Link to="/" className="min-w-0 truncate text-heading font-semibold transition-colors hover:text-slate-600 max-sm:w-full">
+            Gestão de Projetos e Tarefas
           </Link>
-          <nav className="flex items-center gap-4 text-sm">
+          <nav className="flex items-center gap-2 max-sm:w-full">
             {accessToken ? (
               <>
-                <Link to="/projects" className="text-slate-700 hover:text-slate-900">
+                <NavLink to="/projects" className={navClass}>
                   Projetos
-                </Link>
-                <Link to="/reports" className="text-slate-700 hover:text-slate-900">
-                  Relatorios
-                </Link>
-                <button onClick={handleLogout} className="text-slate-700 hover:text-slate-900">
+                </NavLink>
+                <NavLink to="/reports" className={navClass}>
+                  Relatórios
+                </NavLink>
+                <Button variant="ghost" onClick={handleLogout} className="max-sm:flex-1">
                   Sair
-                </button>
+                </Button>
               </>
             ) : (
               <>
-                <Link to="/login" className="text-slate-700 hover:text-slate-900">
+                <NavLink to="/login" className={navClass}>
                   Entrar
-                </Link>
-                <Link to="/register" className="text-slate-700 hover:text-slate-900">
+                </NavLink>
+                <NavLink to="/register" className={navClass}>
                   Cadastrar
-                </Link>
+                </NavLink>
               </>
             )}
           </nav>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        <Outlet />
+      <main className="w-full min-w-0 flex-1 px-gutter py-page">
+        <PageTransition>
+          <Outlet />
+        </PageTransition>
       </main>
     </div>
   );
