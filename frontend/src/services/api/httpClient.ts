@@ -78,7 +78,8 @@ function handleSessionExpired(error: unknown) {
     return;
   }
 
-  useAuthStore.getState().logout();
+  // `expire` (e nao `logout`): o login seguinte do MESMO usuario volta para a rota de origem.
+  useAuthStore.getState().expire();
   inflight.forEach((controller) => controller.abort());
   inflight.clear();
 

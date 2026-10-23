@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { getPending, subscribePending } from '@/services/api/activity';
 import { motionMs } from '@/utils/motion';
 
@@ -11,34 +11,19 @@ export function ActivityBar() {
   const pending = useSyncExternalStore(subscribePending, getPending, getPending);
   /** Montada (inclui o fade de saida). */
   const [mounted, setMounted] = useState(false);
-  /** Opaca: ha requisicao em andamento e o atraso inicial ja passou. */
-  const [active, setActive] = useState(false);
-  const mountedRef = useRef(false);
+  /** Opaca: ha requisicao em andamento e a barra ja esta na tela (o atraso inicial passou). */
+  const active = mounted && pending > 0;
 
+  // Entra so depois do atraso inicial e sai so depois do fade: os dois por timer.
   useEffect(() => {
-    mountedRef.current = mounted;
-  }, [mounted]);
-
-  useEffect(() => {
-    if (pending > 0) {
-      if (mountedRef.current) {
-        setActive(true);
-        return;
-      }
-
-      const timer = window.setTimeout(() => {
-        setMounted(true);
-        setActive(true);
-      }, motionMs('fast'));
-
-      return () => window.clearTimeout(timer);
+    if (pending > 0 === mounted) {
+      return;
     }
 
-    setActive(false);
-    const timer = window.setTimeout(() => setMounted(false), motionMs('fast'));
+    const timer = window.setTimeout(() => setMounted(pending > 0), motionMs('fast'));
 
     return () => window.clearTimeout(timer);
-  }, [pending]);
+  }, [pending, mounted]);
 
   if (!mounted) {
     return null;

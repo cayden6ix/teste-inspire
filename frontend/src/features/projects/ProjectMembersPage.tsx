@@ -11,13 +11,16 @@ import { ClearFilters, FilterSelect, ResultCount, Toolbar } from '@/components/u
 import { PROJECT_ROLE_LABELS, PROJECT_ROLES, assignableRoles, canManageMember, canManageMembers } from '@/types/project';
 import type { ProjectMember, ProjectRole } from '@/types/project';
 import { useCurrentUserId } from '@/hooks/useCurrentUserId';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { useRowStates } from '@/hooks/useRowStates';
+import { useConfirm } from '@/stores/confirmStore';
 import { useToast } from '@/stores/toastStore';
 import { notifyError } from '@/utils/notify';
 import { delay, motionMs } from '@/utils/motion';
 import { ROLE_TONES } from '@/utils/tone';
 import { DEFAULT_PAGE_LIMIT } from '@/types/pagination';
 import { AddMemberModal } from './AddMemberModal';
+import { ProjectUnavailable } from './ProjectUnavailable';
 import { removeMember, updateMemberRole } from './projects.service';
 import { useMembers } from './useMembers';
 import { useProject } from './useProject';
@@ -27,7 +30,8 @@ import { useProject } from './useProject';
  */
 export function ProjectMembersPage() {
   const { projectId } = useParams();
-  const { project } = useProject(projectId);
+  const projectState = useProject(projectId);
+  const { project } = projectState;
   const [roleFilter, setRoleFilter] = useState<ProjectRole | ''>('');
   const {
     data: members,
@@ -42,8 +46,17 @@ export function ProjectMembersPage() {
   /** Papel escolhido no select da linha enquanto o PATCH roda. */
   const [pendingRole, setPendingRole] = useState<Record<string, ProjectRole>>({});
   const toast = useToast();
+  const confirm = useConfirm();
 
   const currentUserId = useCurrentUserId();
+
+  useDocumentTitle(project ? `Membros — ${project.name}` : 'Membros');
+
+  /** "Tentar novamente" recarrega o projeto (e o papel, que decide o que pode ser editado) e os membros. */
+  function retryAll() {
+    void projectState.reload();
+    void reload();
+  }
 
   /** Papéis que o ator pode atribuir e se pode gerenciar membros (owner e admin). */
   const roles = assignableRoles(project?.role);
@@ -80,14 +93,17 @@ export function ProjectMembersPage() {
 
   async function handleRemove(memberUserId: string, memberName: string) {
     if (!projectId) return;
-    if (!window.confirm(`Remover ${memberName} do projeto?`)) {
-      return;
-    }
-
-    rowStates.set(memberUserId, 'deleting');
 
     try {
-      await removeMember(projectId, memberUserId);
+      const removed = await confirm({
+        title: 'Remover membro?',
+        description: `${memberName} perderá o acesso ao projeto e as tarefas atribuídas a essa pessoa ficarão sem responsável.`,
+        confirmLabel: 'Remover',
+        loadingLabel: 'Removendo…',
+        action: () => removeMember(projectId, memberUserId),
+      });
+      if (!removed) return;
+
       rowStates.set(memberUserId, 'removing');
       toast.success('Membro removido.');
       await delay(motionMs('fast'));
@@ -147,23 +163,30 @@ export function ProjectMembersPage() {
       mobileLabel: false,
       render: (member) =>
         canEditRow(member) ? (
-          <Button
-            variant="danger"
-            onClick={() => void handleRemove(member.userId, member.name)}
-            loading={rowStates.get(member.userId) === 'deleting'}
-            loadingLabel="Removendo…"
-          >
+          <Button variant="danger" onClick={() => void handleRemove(member.userId, member.name)}>
             Remover
           </Button>
         ) : null,
     },
   ];
 
+  // Sem o projeto, o papel do usuario e desconhecido e a tela pareceria somente leitura.
+  if (!project) {
+    return (
+      <ProjectUnavailable
+        error={projectState.error}
+        retryable={projectState.retryable}
+        retrying={projectState.loading}
+        onRetry={retryAll}
+      />
+    );
+  }
+
   return (
     <Page>
       <PageHeader
         title="Membros"
-        description={`${project ? `Projeto ${project.name}` : 'Projeto'}. Papéis: proprietário, administrador, membro e visualizador.`}
+        description={`Projeto ${project.name}. Papéis: proprietário, administrador, membro e visualizador.`}
         actions={canManage && <Button onClick={() => setAdding(true)}>Adicionar membro</Button>}
       />
 
@@ -200,7 +223,7 @@ export function ProjectMembersPage() {
         rowKey={(member) => member.id}
         loading={loading}
         error={error}
-        onRetry={() => void reload()}
+        onRetry={retryAll}
         rowState={(member) => rowStates.get(member.userId)}
         loadingLabel="Carregando membros…"
         emptyTitle="Nenhum membro encontrado."

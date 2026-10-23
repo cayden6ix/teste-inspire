@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Button, buttonClass } from '@/components/ui/Button';
 import { PageTransition } from '@/components/ui/PageTransition';
+import { MAIN_CONTENT_ID, SkipLink } from '@/components/ui/SkipLink';
 import { useAuthStore } from '@/stores/authStore';
 import { useToast } from '@/stores/toastStore';
 
@@ -25,6 +26,7 @@ export function AppLayout() {
 
   return (
     <div className="flex min-h-screen animate-fade-in flex-col bg-slate-50 text-slate-900">
+      <SkipLink />
       <header className="border-b border-slate-200 bg-white">
         <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-3 px-gutter py-3">
           <Link to="/" className="min-w-0 truncate text-heading font-semibold transition-colors hover:text-slate-600 max-sm:w-full">
@@ -57,7 +59,7 @@ export function AppLayout() {
         </div>
       </header>
 
-      <main className="w-full min-w-0 flex-1 px-gutter py-page">
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="w-full min-w-0 flex-1 px-gutter py-page outline-none">
         <PageTransition>
           <Outlet />
         </PageTransition>

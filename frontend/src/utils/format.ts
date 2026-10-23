@@ -16,3 +16,17 @@ export function formatDate(value: string | null): string | null {
 export function formatNumber(value: number): string {
   return value.toLocaleString('pt-BR');
 }
+
+/**
+ * Percentual inteiro de `part` em `total` para exibicao (REL-08): `0%` so quando e zero de
+ * fato; qualquer valor acima de zero e abaixo de 1% aparece como `<1%` (e nao `0%`).
+ */
+export function formatPercent(part: number, total: number): string {
+  if (total <= 0 || part <= 0) {
+    return '0%';
+  }
+
+  const percent = (part / total) * 100;
+
+  return percent < 1 ? '<1%' : `${Math.round(percent)}%`;
+}

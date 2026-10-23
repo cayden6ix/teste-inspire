@@ -7,6 +7,7 @@ import type { DataColumn } from '@/components/ui/DataTable';
 import { Page } from '@/components/ui/Page';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ClearFilters, ResultCount, SearchBox, Toolbar } from '@/components/ui/Toolbar';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { DEFAULT_PAGE_LIMIT } from '@/types/pagination';
 import { PROJECT_ROLE_LABELS } from '@/types/project';
 import type { Project } from '@/types/project';
@@ -68,6 +69,8 @@ export function ProjectsPage() {
     error,
     reload,
   } = useProjects(DEFAULT_PAGE_LIMIT, search || undefined);
+
+  useDocumentTitle('Projetos');
 
   function applySearch(term: string) {
     setSearch(term.trim());

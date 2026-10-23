@@ -14,6 +14,22 @@ export function isNetworkError(error: unknown): boolean {
   return axios.isAxiosError(error) && !error.response && error.code !== 'ERR_CANCELED';
 }
 
+/** Status HTTP da resposta de erro, ou null (rede, cancelamento ou erro que nao e do axios). */
+export function errorStatus(error: unknown): number | null {
+  return axios.isAxiosError(error) ? (error.response?.status ?? null) : null;
+}
+
+/**
+ * Vale a pena oferecer "Tentar novamente"? Sim para falha de rede/tempo esgotado, 5xx e 429
+ * (o problema e passageiro). Nao para 400/403/404: repetir daria o mesmo resultado (PRJ-19).
+ */
+export function isRetryableError(error: unknown): boolean {
+  if (isNetworkError(error)) return true;
+
+  const status = errorStatus(error);
+  return status === null || status === 429 || status >= 500;
+}
+
 type ErrorListOptions = {
   /**
    * Requisição feita sem sessão (login e cadastro): 401 e 403 sem `message` da API não significam

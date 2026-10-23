@@ -51,6 +51,12 @@ type ToastCardProps = {
 function ToastCard({ toast, onRemove }: ToastCardProps) {
   const { id, tone, title, description, items, duration, revision } = toast;
   const [leaving, setLeaving] = useState(false);
+  /** Revisao ja exibida: um toast reaproveitado (mesmo id) cancela a saida durante o render. */
+  const [shownRevision, setShownRevision] = useState(revision);
+  if (shownRevision !== revision) {
+    setShownRevision(revision);
+    setLeaving(false);
+  }
   const remaining = useRef(duration);
   const startedAt = useRef(0);
   const timer = useRef<number | undefined>(undefined);
@@ -86,7 +92,6 @@ function ToastCard({ toast, onRemove }: ToastCardProps) {
   useEffect(() => {
     remaining.current = duration;
     leavingRef.current = false;
-    setLeaving(false);
 
     if (!hovered.current && !focused.current) {
       start();

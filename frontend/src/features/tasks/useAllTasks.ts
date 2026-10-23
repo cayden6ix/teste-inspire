@@ -6,18 +6,22 @@ import { errorMessage } from '@/utils/errorMessage';
 export type LoadProgress = {
   /** Pagina que esta sendo buscada agora. */
   page: number;
+  /** Ultima pagina que sera lida (ja limitada pelo teto do quadro). */
   totalPages: number;
 };
 
 /**
- * Todas as tarefas do projeto para o quadro Kanban (D-012).
- * Le todas as paginas do backend e entrega um array unico, sem paginacao na tela.
+ * Tarefas do projeto para o quadro Kanban (D-012), ate o teto de 5.000 (KAN-15).
+ * Le as paginas do backend e entrega um array unico, sem paginacao na tela.
  * `search` filtra no servidor (titulo e descricao), igual a lista.
  * `progress` indica a pagina em andamento quando ha varias; `loaded` fica true depois da primeira
  * resposta (os recarregamentos seguintes mantem o quadro na tela em vez de voltar ao esqueleto).
+ * `truncated` avisa que havia mais tarefas do que o teto (so as mais recentes vieram).
  */
 export function useAllTasks(projectId: string | undefined, assigneeId: string, search?: string) {
   const [data, setData] = useState<Task[]>([]);
+  const [total, setTotal] = useState(0);
+  const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,15 +42,21 @@ export function useAllTasks(projectId: string | undefined, assigneeId: string, s
     setProgress(null);
 
     try {
-      const all = await listAllTasks(projectId, { assigneeId: assigneeId || undefined, search }, (page, totalPages) => {
-        if (id === requestId.current) {
-          setProgress({ page, totalPages });
-        }
-      });
+      const result = await listAllTasks(
+        projectId,
+        { assigneeId: assigneeId || undefined, search },
+        (page, totalPages) => {
+          if (id === requestId.current) {
+            setProgress({ page, totalPages });
+          }
+        },
+      );
 
       if (id !== requestId.current) return;
 
-      setData(all);
+      setData(result.tasks);
+      setTotal(result.total);
+      setTruncated(result.truncated);
       setLoaded(true);
     } catch (err) {
       if (id !== requestId.current) return;
@@ -60,8 +70,9 @@ export function useAllTasks(projectId: string | undefined, assigneeId: string, s
   }, [projectId, assigneeId, search]);
 
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- busca de dados ao montar e ao trocar o filtro (D-007).
     void reload();
   }, [reload]);
 
-  return { data, loading, loaded, error, progress, reload };
+  return { data, total, truncated, loading, loaded, error, progress, reload };
 }

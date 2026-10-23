@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { httpClient } from '@/services/api/httpClient';
 import type { PaginatedResponse, PaginationParams } from '@/types/pagination';
 import { MAX_PAGE_LIMIT } from '@/types/pagination';
@@ -21,31 +22,53 @@ export async function listTasks(
 }
 
 /**
- * Busca todas as tarefas do projeto, pagina a pagina, no limite maximo do backend.
+ * Teto de paginas que o quadro carrega: 50 paginas de 100 = 5.000 tarefas (KAN-15). Abrir o
+ * quadro nunca gasta mais que metade do rate limit geral (100 requisicoes por minuto).
+ */
+export const BOARD_MAX_PAGES = 50;
+
+export const BOARD_MAX_TASKS = BOARD_MAX_PAGES * MAX_PAGE_LIMIT;
+
+export interface AllTasksResult {
+  /** As tarefas carregadas, das mais recentes para as mais antigas. */
+  tasks: Task[];
+  /** Total de tarefas que o filtro encontra no servidor (pode passar do que foi carregado). */
+  total: number;
+  /** Havia mais tarefas do que o teto: so as `BOARD_MAX_TASKS` mais recentes vieram. */
+  truncated: boolean;
+}
+
+/**
+ * Busca as tarefas do projeto pagina a pagina, no limite maximo do backend, ate `maxPages`.
  * Usado pelo quadro Kanban, que mostra todas as colunas de uma vez (D-012).
  */
 export async function listAllTasks(
   projectId: string,
   filters: TaskFilters = {},
-  /** Chamado antes de buscar cada pagina seguinte: (proxima pagina, total de paginas). */
+  /** Chamado antes de buscar cada pagina seguinte: (proxima pagina, ultima pagina que sera lida). */
   onProgress?: (nextPage: number, totalPages: number) => void,
-): Promise<Task[]> {
-  const all: Task[] = [];
+  maxPages = BOARD_MAX_PAGES,
+): Promise<AllTasksResult> {
+  const tasks: Task[] = [];
   let page = 1;
-  let totalPages = 1;
+  let lastPage = 1;
+  let total = 0;
+  let totalPages = 0;
 
   do {
     const response = await listTasks(projectId, { ...filters, page, limit: MAX_PAGE_LIMIT });
-    all.push(...response.data);
+    tasks.push(...response.data);
+    total = response.meta.total;
     totalPages = response.meta.totalPages;
+    lastPage = Math.min(totalPages, maxPages);
     page += 1;
 
-    if (page <= totalPages) {
-      onProgress?.(page, totalPages);
+    if (page <= lastPage) {
+      onProgress?.(page, lastPage);
     }
-  } while (page <= totalPages);
+  } while (page <= lastPage);
 
-  return all;
+  return { tasks, total, truncated: totalPages > maxPages };
 }
 
 export async function getTask(projectId: string, taskId: string): Promise<Task> {
@@ -72,25 +95,40 @@ export async function deleteTask(projectId: string, taskId: string): Promise<voi
 }
 
 /**
- * Exporta as tarefas do projeto em CSV (D-014).
- * O backend responde `text/csv` com o cabecalho
- * `titulo,descricao,status,responsavel_email,data_limite`.
+ * Exporta as tarefas do projeto em CSV (D-014), em ordem cronologica (D-020).
+ * O backend responde `text/csv` em UTF-8 COM BOM (D-030), com o cabecalho
+ * `titulo,descricao,status,responsavel_email,data_limite`. Vem como Blob (bytes intactos):
+ * lido como texto, o navegador descartaria o BOM e o Excel mostraria os acentos errados.
  */
-export async function exportTasksCsv(projectId: string): Promise<string> {
-  const { data } = await httpClient.get<string>(`/projects/${projectId}/tasks/export`, {
-    responseType: 'text',
-  });
-  return data;
+export async function exportTasksCsv(projectId: string): Promise<Blob> {
+  try {
+    const { data } = await httpClient.get<Blob>(`/projects/${projectId}/tasks/export`, {
+      responseType: 'blob',
+    });
+    return data;
+  } catch (error) {
+    // Com responseType 'blob' o corpo do erro tambem chega como Blob: volta a ser o JSON da API,
+    // para a mensagem em portugues (ex.: 404 'Projeto não encontrado.') chegar ao toast.
+    if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+      try {
+        error.response.data = JSON.parse(await error.response.data.text()) as unknown;
+      } catch {
+        // Corpo que nao e JSON: fica a mensagem generica do status.
+      }
+    }
+    throw error;
+  }
 }
 
 /**
  * Importa tarefas em massa a partir de um CSV (D-014).
- * O texto do CSV e enviado no campo `file` de um multipart/form-data.
- * Linhas invalidas voltam em `errors` sem interromper a importacao.
+ * O proprio arquivo escolhido vai no campo `file` de um multipart/form-data, sem ser relido
+ * como texto: o backend recebe os bytes originais (com ou sem BOM) e detecta arquivo que nao
+ * e CSV. Linhas invalidas voltam em `errors` sem interromper a importacao.
  */
-export async function importTasksCsv(projectId: string, csv: string): Promise<ImportResult> {
+export async function importTasksCsv(projectId: string, file: Blob): Promise<ImportResult> {
   const form = new FormData();
-  form.append('file', new Blob([csv], { type: 'text/csv' }), 'tarefas.csv');
+  form.append('file', file, 'tarefas.csv');
 
   // O Content-Type padrao do httpClient e JSON e faria o axios serializar o FormData como JSON
   // (o arquivo chegaria vazio). Com multipart explicito o navegador monta o boundary sozinho.

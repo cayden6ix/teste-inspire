@@ -11,12 +11,13 @@
   --spacing-control-sm: 2rem; /* 32px: variante 'sm', somente acao embutida em campo */
   --spacing-button: 6rem; /* 96px: largura minima de botao com texto */
   --spacing-field-icon: 2.5rem; /* 40px: recuo do texto quando ha icone dentro do campo */
-  --spacing-field-action: 6rem; /* 96px: area reservada a direita do campo de busca */
-  --spacing-field-hint: 12rem; /* 192px: idem quando a dica 'Enter' esta visivel (>= sm) */
+  --spacing-field-action: 6rem; /* 96px: area a direita do campo de busca, so quando ha selo Enter ou Limpar */
 
   /* Listagens. */
   --spacing-row: 3.5rem; /* 56px: linha de tabela/lista */
   --spacing-table-head: 2.5rem; /* 40px: cabecalho de tabela */
+  /* Altura maxima da coluna do Kanban: a coluna rola sozinha em vez de esticar a pagina. */
+  --spacing-kanban-column: calc(100dvh - 12rem);
 
   /* Superficies: cartao/secao/modal = 24px; barras compactas (toolbar, tabela, coluna) = 16px. */
   --spacing-card: 1.5rem;

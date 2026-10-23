@@ -39,7 +39,15 @@ export function ImportTasksModal({ projectId, onClose, onImported }: ImportTasks
     setBusy(true);
 
     try {
-      const imported = await importTasksCsv(projectId, await file.text());
+      const imported = await importTasksCsv(projectId, file);
+
+      // Defesa: a API ja recusa (400, com o motivo) arquivo sem linhas de tarefa.
+      if (imported.created === 0 && imported.errors.length === 0) {
+        setError('Nenhuma tarefa foi importada: o arquivo não tem linhas de tarefa depois do cabeçalho.');
+        setBusy(false);
+        return false;
+      }
+
       void onImported(imported);
 
       if (imported.errors.length === 0) {
@@ -48,7 +56,7 @@ export function ImportTasksModal({ projectId, onClose, onImported }: ImportTasks
       }
 
       toast.warning({
-        title: 'Importação concluída com avisos.',
+        title: imported.created === 0 ? 'Nenhuma tarefa foi importada.' : 'Importação concluída com avisos.',
         description: `${imported.created} tarefa(s) importada(s); ${imported.errors.length} linha(s) não foram importadas.`,
       });
       setResult(imported);
@@ -72,7 +80,11 @@ export function ImportTasksModal({ projectId, onClose, onImported }: ImportTasks
         footer={<ModalCloseButton>Fechar</ModalCloseButton>}
       >
         <div className="flex flex-col gap-4">
-          <Alert tone="success">{result.created} tarefa(s) criada(s) pela importação.</Alert>
+          {result.created === 0 ? (
+            <Alert>Nenhuma tarefa foi importada: todas as linhas têm erro. Corrija o arquivo e importe de novo.</Alert>
+          ) : (
+            <Alert tone="success">{result.created} tarefa(s) criada(s) pela importação.</Alert>
+          )}
           <p className="text-body font-medium text-slate-800">
             {result.errors.length} linha(s) não foram importadas:
           </p>
@@ -103,7 +115,7 @@ export function ImportTasksModal({ projectId, onClose, onImported }: ImportTasks
       <FormField
         label="Arquivo CSV"
         htmlFor="import-file"
-        hint="Linhas inválidas não interrompem a importação: elas voltam com o número da linha."
+        hint="A coluna titulo é obrigatória. Status aceito: pendente, em andamento ou concluída. Linhas inválidas não interrompem a importação: elas voltam com o número da linha."
       >
         {/* O seletor nativo nao tem a altura padrao: o input fica oculto e o Button o aciona. */}
         <input

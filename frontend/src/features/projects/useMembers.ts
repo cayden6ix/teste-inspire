@@ -55,6 +55,7 @@ export function useMembers(
   }, [projectId, page, limit, role]);
 
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- busca de dados ao montar e ao trocar filtro ou pagina (D-007).
     void reload();
   }, [reload]);
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Page } from '@/components/ui/Page';
@@ -11,8 +12,10 @@ import { ClearFilters, FilterSelect, Toolbar } from '@/components/ui/Toolbar';
 import { MAX_PAGE_LIMIT } from '@/types/pagination';
 import { TASK_STATUS_LABELS, TASK_STATUSES } from '@/types/task';
 import type { ReportGroupBy } from '@/types/report';
-import { formatNumber } from '@/utils/format';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
+import { formatNumber, formatPercent } from '@/utils/format';
 import { STATUS_TONES } from '@/utils/tone';
+import { PROJECT_UNAVAILABLE_MESSAGE } from '@/features/projects/ProjectUnavailable';
 import { useProjects } from '@/features/projects/useProjects';
 import { useReport } from './useReport';
 
@@ -25,7 +28,9 @@ export function ReportsPage() {
   const [searchParams] = useSearchParams();
   const [groupBy, setGroupBy] = useState<ReportGroupBy>('status');
   const [projectId, setProjectId] = useState(searchParams.get('projectId') ?? '');
-  const { report, loading, error, reload } = useReport(groupBy, projectId);
+  const { report, loading, error, retryable, reload } = useReport(groupBy, projectId);
+
+  useDocumentTitle('Relatórios');
 
   const total = report?.total ?? 0;
 
@@ -71,7 +76,22 @@ export function ReportsPage() {
           ))}
         </div>
       )}
-      {error && <ErrorState message={error} onRetry={() => void reload()} retrying={loading} />}
+      {error &&
+        (retryable ? (
+          <ErrorState message={error} onRetry={() => void reload()} retrying={loading} />
+        ) : (
+          // Projeto do filtro inexistente ou alheio (404): repetir nao resolve.
+          <ErrorState
+            message={projectId ? PROJECT_UNAVAILABLE_MESSAGE : error}
+            action={
+              projectId ? (
+                <Button variant="secondary" onClick={() => setProjectId('')}>
+                  Ver todos os meus projetos
+                </Button>
+              ) : undefined
+            }
+          />
+        ))}
 
       {report && !loading && (
         <div className="flex animate-fade-in flex-col gap-6">
@@ -92,7 +112,8 @@ export function ReportsPage() {
             ) : (
               <ul className="flex flex-col gap-4">
                 {report.groups.map((group) => {
-                  const percent = total === 0 ? 0 : Math.round((group.count / total) * 100);
+                  // A barra usa a proporcao exata; o texto, o percentual arredondado (<1% se pequeno).
+                  const ratio = total === 0 ? 0 : group.count / total;
 
                   return (
                     <li key={group.key}>
@@ -107,13 +128,13 @@ export function ReportsPage() {
                           )}
                         </span>
                         <span className="text-slate-600">
-                          {formatNumber(group.count)} ({percent}%)
+                          {formatNumber(group.count)} ({formatPercent(group.count, total)})
                         </span>
                       </div>
                       <div className="mt-2 h-2 w-full rounded-pill bg-slate-100">
                         <div
                           className="h-2 w-full origin-left animate-bar-grow rounded-pill bg-slate-900"
-                          style={{ '--bar-scale': percent / 100 } as CSSProperties}
+                          style={{ '--bar-scale': ratio } as CSSProperties}
                         />
                       </div>
                     </li>

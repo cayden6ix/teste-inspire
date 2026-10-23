@@ -8,30 +8,36 @@ import { Select } from '@/components/ui/Field';
 import { Page } from '@/components/ui/Page';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ClearFilters, FilterSelect, ResultCount, SearchBox, Toolbar } from '@/components/ui/Toolbar';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { MAX_PAGE_LIMIT } from '@/types/pagination';
 import { TASK_STATUS_LABELS, TASK_STATUSES } from '@/types/task';
 import type { ImportResult, Task, TaskStatus } from '@/types/task';
 import { useRowStates } from '@/hooks/useRowStates';
+import { useConfirm } from '@/stores/confirmStore';
 import { useToast } from '@/stores/toastStore';
 import { delay, motionMs } from '@/utils/motion';
 import { formatDate } from '@/utils/format';
 import { notifyError } from '@/utils/notify';
 import { STATUS_TONES } from '@/utils/tone';
+import { ProjectUnavailable } from '@/features/projects/ProjectUnavailable';
 import { useMembers } from '@/features/projects/useMembers';
 import { useProject } from '@/features/projects/useProject';
 import { deleteTask, exportTasksCsv, updateTask } from './tasks.service';
 import { ImportTasksModal } from './ImportTasksModal';
 import { NewTaskModal } from './NewTaskModal';
+import { TaskDetailsModal } from './TaskDetailsModal';
 import { TaskViewTabs } from './TaskViewTabs';
 import { useTasks } from './useTasks';
 
 /**
  * Tarefas do projeto (D-011, D-012) com exportacao e importacao em CSV (D-014).
+ * O titulo abre o mesmo detalhe/edicao do quadro (TaskDetailsModal); o status muda na linha.
  */
 export function TasksPage() {
   const { projectId } = useParams();
-  const { project } = useProject(projectId);
-  const { data: members } = useMembers(projectId, MAX_PAGE_LIMIT);
+  const projectState = useProject(projectId);
+  const { project } = projectState;
+  const { data: members, reload: reloadMembers } = useMembers(projectId, MAX_PAGE_LIMIT);
   const [status, setStatus] = useState<TaskStatus | ''>('');
   const [assigneeId, setAssigneeId] = useState('');
   /** Texto digitado no campo. So vira `search` (valor aplicado) ao apertar Enter. */
@@ -45,14 +51,25 @@ export function TasksPage() {
 
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [selected, setSelected] = useState<Task | null>(null);
   const [csvBusy, setCsvBusy] = useState(false);
   const rowStates = useRowStates();
   /** Valor escolhido no select da linha enquanto o PATCH roda (evita o select "voltar" antes de salvar). */
   const [pendingStatus, setPendingStatus] = useState<Record<string, TaskStatus>>({});
   const toast = useToast();
+  const confirm = useConfirm();
+
+  useDocumentTitle(project ? `Tarefas — ${project.name}` : 'Tarefas');
 
   const canWrite = project !== null && project.role !== 'viewer';
   const hasFilters = search !== '' || status !== '' || assigneeId !== '';
+
+  /** "Tentar novamente" recarrega tudo o que a tela usa: projeto (e papel), membros e tarefas. */
+  function retryAll() {
+    void projectState.reload();
+    void reloadMembers();
+    void reload();
+  }
 
   function applySearch(term: string) {
     setSearch(term.trim());
@@ -103,24 +120,27 @@ export function TasksPage() {
     }
   }
 
-  async function handleDelete(taskId: string, taskTitle: string) {
+  async function handleDelete(task: Task) {
     if (!projectId) return;
-    if (!window.confirm(`Excluir a tarefa "${taskTitle}"?`)) {
-      return;
-    }
-
-    rowStates.set(taskId, 'deleting');
 
     try {
-      await deleteTask(projectId, taskId);
-      rowStates.set(taskId, 'removing');
+      const deleted = await confirm({
+        title: 'Excluir tarefa?',
+        description: `Esta ação não pode ser desfeita. A tarefa "${task.title}" será excluída.`,
+        confirmLabel: 'Excluir',
+        loadingLabel: 'Excluindo…',
+        action: () => deleteTask(projectId, task.id),
+      });
+      if (!deleted) return;
+
+      rowStates.set(task.id, 'removing');
       toast.success('Tarefa excluída.');
       await delay(motionMs('fast'));
       await reload();
     } catch (err) {
       notifyError(err, 'Não foi possível excluir a tarefa.');
     } finally {
-      rowStates.clear(taskId);
+      rowStates.clear(task.id);
     }
   }
 
@@ -130,8 +150,9 @@ export function TasksPage() {
     setCsvBusy(true);
 
     try {
+      // Blob com os bytes da API (UTF-8 com BOM, D-030): o Excel reconhece os acentos.
       const csv = await exportTasksCsv(projectId);
-      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const url = URL.createObjectURL(csv);
       const link = document.createElement('a');
       link.href = url;
       link.download = `tarefas-${projectId}.csv`;
@@ -155,7 +176,14 @@ export function TasksPage() {
       mobileLabel: false,
       render: (task) => (
         <div className="min-w-0">
-          <p className="truncate font-medium text-slate-900">{task.title}</p>
+          {/* Titulo como botao: abre o detalhe/edicao (teclado: Tab + Enter), como no quadro. */}
+          <button
+            type="button"
+            onClick={() => setSelected(task)}
+            className="block max-w-full truncate rounded-control text-left font-medium text-slate-900 hover:underline"
+          >
+            {task.title}
+          </button>
           {task.description && <p className="truncate text-caption text-slate-600">{task.description}</p>}
         </div>
       ),
@@ -205,23 +233,30 @@ export function TasksPage() {
       mobileLabel: false,
       render: (task) =>
         canWrite ? (
-          <Button
-            variant="danger"
-            onClick={() => void handleDelete(task.id, task.title)}
-            loading={rowStates.get(task.id) === 'deleting'}
-            loadingLabel="Excluindo…"
-          >
+          <Button variant="danger" onClick={() => void handleDelete(task)}>
             Excluir
           </Button>
         ) : null,
     },
   ];
 
+  // Sem o projeto (e o papel do usuario nele) a tela ficaria "pela metade": esqueleto ou erro.
+  if (!project) {
+    return (
+      <ProjectUnavailable
+        error={projectState.error}
+        retryable={projectState.retryable}
+        retrying={projectState.loading}
+        onRetry={retryAll}
+      />
+    );
+  }
+
   return (
     <Page>
       <PageHeader
         title="Tarefas"
-        description={`${project ? `Projeto ${project.name}` : 'Projeto'}: status pendente, em andamento e concluída.`}
+        description={`Projeto ${project.name}: status pendente, em andamento e concluída.`}
         actions={
           <>
             <TaskViewTabs projectId={projectId} active="lista" />
@@ -296,7 +331,7 @@ export function TasksPage() {
         rowKey={(task) => task.id}
         loading={loading}
         error={error}
-        onRetry={() => void reload()}
+        onRetry={retryAll}
         rowState={(task) => rowStates.get(task.id)}
         loadingLabel="Carregando tarefas…"
         emptyTitle={
@@ -321,6 +356,17 @@ export function TasksPage() {
           projectId={projectId}
           onClose={() => setImporting(false)}
           onImported={handleImported}
+        />
+      )}
+      {selected && projectId && (
+        <TaskDetailsModal
+          key={selected.id}
+          projectId={projectId}
+          task={selected}
+          members={members}
+          canWrite={canWrite}
+          onChanged={reload}
+          onClose={() => setSelected(null)}
         />
       )}
     </Page>

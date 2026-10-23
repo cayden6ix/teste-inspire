@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
+import type { ComponentProps, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
 import { Spinner } from './Spinner';
 
 /**
@@ -10,7 +10,8 @@ const FIELD_CLASS =
 
 const CONTROL_CLASS = `${FIELD_CLASS} h-control`;
 
-type InputProps = InputHTMLAttributes<HTMLInputElement>;
+/** Inclui `ref` (React 19 repassa o ref como prop comum). */
+type InputProps = ComponentProps<'input'>;
 
 export function Input({ className = '', ...props }: InputProps) {
   return <input {...props} className={`${CONTROL_CLASS} ${className}`} />;

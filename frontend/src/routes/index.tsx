@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router-dom';
 import { AppLayout } from '@/app/AppLayout';
 import { AuthLayout } from '@/app/AuthLayout';
+import { GuestOnly } from '@/app/GuestOnly';
 import { RequireAuth } from '@/app/RequireAuth';
 import { HomePage } from '@/pages/HomePage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
@@ -36,8 +37,14 @@ export const router = createBrowserRouter([
   {
     element: <AuthLayout />,
     children: [
-      { path: '/login', element: <LoginPage /> },
-      { path: '/register', element: <RegisterPage /> },
+      {
+        // Com sessao, /login e /register redirecionam (GuestOnly decide o destino).
+        element: <GuestOnly />,
+        children: [
+          { path: '/login', element: <LoginPage /> },
+          { path: '/register', element: <RegisterPage /> },
+        ],
+      },
     ],
   },
 ]);

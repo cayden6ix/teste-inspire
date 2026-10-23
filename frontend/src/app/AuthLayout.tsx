@@ -1,5 +1,6 @@
 import { Link, Outlet } from 'react-router-dom';
 import { PageTransition } from '@/components/ui/PageTransition';
+import { MAIN_CONTENT_ID, SkipLink } from '@/components/ui/SkipLink';
 
 const HIGHLIGHTS = [
   'Projetos com membros e papéis',
@@ -15,6 +16,7 @@ const HIGHLIGHTS = [
 export function AuthLayout() {
   return (
     <div className="grid min-h-screen w-full animate-fade-in bg-white lg:grid-cols-2">
+      <SkipLink />
       <aside className="hidden flex-col justify-between gap-8 bg-slate-900 p-8 text-white lg:flex">
         <Link to="/" className="text-heading font-semibold">
           Gestão de Projetos e Tarefas
@@ -37,7 +39,11 @@ export function AuthLayout() {
         <p className="text-caption text-slate-400">API de Gestão de Projetos e Tarefas</p>
       </aside>
 
-      <main className="flex min-w-0 flex-col justify-center gap-6 px-gutter py-page">
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="flex min-w-0 flex-col justify-center gap-6 px-gutter py-page outline-none"
+      >
         <Link to="/" className="truncate text-heading font-semibold text-slate-900 lg:hidden">
           Gestão de Projetos e Tarefas
         </Link>

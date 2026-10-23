@@ -2,10 +2,13 @@ import { ButtonLink } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Page } from '@/components/ui/Page';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { useAuthStore } from '@/stores/authStore';
 
 export function HomePage() {
   const accessToken = useAuthStore((s) => s.accessToken);
+
+  useDocumentTitle('Início');
 
   return (
     <Page>

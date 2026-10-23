@@ -1,3 +1,4 @@
+import { useId, useRef } from 'react';
 import type { FormEvent, ReactNode, SelectHTMLAttributes } from 'react';
 import { formatNumber } from '@/utils/format';
 import { Button } from './Button';
@@ -65,7 +66,13 @@ function SearchIcon() {
   );
 }
 
-/** Campo de busca com lupa. Enter aplica (quando `onSubmit`), Limpar zera. */
+/**
+ * Campo de busca com lupa. Enter aplica (quando `onSubmit`), Limpar zera e devolve o foco ao campo.
+ *
+ * A area a direita (selo "Enter" ou botao Limpar) so reserva espaco quando aparece: com o campo
+ * vazio o placeholder usa a largura toda e aparece completo em qualquer tela (PRJ-08). A dica
+ * "Pressione Enter para buscar" fica no `title` do selo e no `aria-describedby` do campo.
+ */
 export function SearchBox({
   value,
   onChange,
@@ -75,6 +82,8 @@ export function SearchBox({
   applied = '',
   onClear,
 }: SearchBoxProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const hintId = useId();
   const serverSearch = onSubmit !== undefined;
   const pending = serverSearch && value.trim() !== applied;
   const canClear = serverSearch ? applied !== '' : value !== '';
@@ -84,25 +93,40 @@ export function SearchBox({
     onSubmit?.(value);
   }
 
+  function handleClear() {
+    onClear();
+    // O botao Limpar some ao limpar: o foco volta ao campo, e nao ao <body> (PRJ-07).
+    inputRef.current?.focus();
+  }
+
   return (
     <form onSubmit={handleSubmit} role="search" className="group relative w-full sm:w-96">
       <SearchIcon />
       <Input
+        ref={inputRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={label}
-        className="pl-field-icon pr-field-action sm:pr-field-hint"
+        aria-describedby={serverSearch ? hintId : undefined}
+        className={`pl-field-icon ${pending || canClear ? 'pr-field-action' : ''}`}
       />
+      {serverSearch && (
+        <span id={hintId} className="sr-only">
+          Pressione Enter para buscar.
+        </span>
+      )}
       <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1">
         {pending ? (
-          <span className="pr-2 text-caption text-slate-500">
-            <span className="sm:hidden">Enter</span>
-            <span className="hidden sm:inline">Pressione Enter para buscar</span>
-          </span>
+          <kbd
+            title="Pressione Enter para buscar"
+            className="mr-2 rounded-control border border-slate-300 bg-slate-50 px-2 font-sans text-caption text-slate-500"
+          >
+            Enter
+          </kbd>
         ) : (
           canClear && (
-            <Button variant="ghost" size="sm" onClick={onClear}>
+            <Button variant="ghost" size="sm" onClick={handleClear}>
               Limpar
             </Button>
           )

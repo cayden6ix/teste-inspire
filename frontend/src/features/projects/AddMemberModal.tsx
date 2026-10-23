@@ -2,12 +2,11 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { FormField, Input, Select } from '@/components/ui/Field';
 import { FormModal } from '@/components/ui/FormModal';
-import { MAX_PAGE_LIMIT } from '@/types/pagination';
 import { PROJECT_ROLE_LABELS } from '@/types/project';
 import type { ProjectRole } from '@/types/project';
 import { useToast } from '@/stores/toastStore';
 import { errorMessage } from '@/utils/errorMessage';
-import { findUsers } from '@/features/users/users.service';
+import { findUsers, USER_SEARCH_LIMIT } from '@/features/users/users.service';
 import type { UserSummary } from '@/features/users/users.service';
 import { addMember } from './projects.service';
 
@@ -33,6 +32,8 @@ type AddMemberModalProps = {
 export function AddMemberModal({ projectId, roles, onClose, onAdded }: AddMemberModalProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UserSummary[]>([]);
+  /** Total encontrado no servidor (a busca devolve no maximo 10 por vez, D-028). */
+  const [found, setFound] = useState(0);
   const [selected, setSelected] = useState<UserSummary | null>(null);
   const [role, setRole] = useState<ProjectRole>(roles.includes('member') ? 'member' : (roles[0] ?? 'member'));
   const [error, setError] = useState<string | null>(null);
@@ -64,10 +65,11 @@ export function AddMemberModal({ projectId, roles, onClose, onAdded }: AddMember
     setSearching(true);
 
     try {
-      const { data: found } = await findUsers({ email: value, limit: MAX_PAGE_LIMIT });
-      setResults(found);
+      const { data, meta } = await findUsers({ email: value, limit: USER_SEARCH_LIMIT });
+      setResults(data);
+      setFound(meta.total);
 
-      if (found.length === 0) {
+      if (data.length === 0) {
         setError('Nenhum usuário encontrado com esse e-mail.');
       }
     } catch (err) {
@@ -127,6 +129,12 @@ export function AddMemberModal({ projectId, roles, onClose, onAdded }: AddMember
               placeholder="nome@email.com"
             />
           </FormField>
+
+          {results.length > 0 && found > results.length && (
+            <p className="text-caption text-slate-500">
+              {`Mostrando ${results.length} de ${found} usuários. Digite mais do e-mail para refinar a busca.`}
+            </p>
+          )}
 
           {results.length > 0 && (
             <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-control border border-slate-200">

@@ -2,21 +2,22 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Alert } from '@/components/ui/Alert';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { Skeleton } from '@/components/ui/Skeleton';
 import { Badge } from '@/components/ui/Badge';
 import { Button, ButtonLink } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { FormField, Input, Textarea } from '@/components/ui/Field';
 import { Page } from '@/components/ui/Page';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { PROJECT_ROLE_LABELS } from '@/types/project';
+import { useConfirm } from '@/stores/confirmStore';
 import { useToast } from '@/stores/toastStore';
 import { errorMessage } from '@/utils/errorMessage';
 import { motionMs } from '@/utils/motion';
 import { notifyError } from '@/utils/notify';
 import { ROLE_TONES } from '@/utils/tone';
 import { deleteProject, updateProject } from './projects.service';
+import { ProjectUnavailable } from './ProjectUnavailable';
 import { useProject } from './useProject';
 
 /**
@@ -26,7 +27,7 @@ import { useProject } from './useProject';
 export function ProjectDetailPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const { project, loading, error, reload } = useProject(projectId);
+  const { project, loading, error, retryable, reload } = useProject(projectId);
   const [editing, setEditing] = useState(false);
   /** O card Editar toca o fade de saida antes de ser desmontado. */
   const [editClosing, setEditClosing] = useState(false);
@@ -34,8 +35,10 @@ export function ProjectDetailPage() {
   const [description, setDescription] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const toast = useToast();
+  const confirm = useConfirm();
+
+  useDocumentTitle(project?.name ?? 'Projeto');
 
   function closeEditor() {
     setEditClosing(true);
@@ -75,43 +78,36 @@ export function ProjectDetailPage() {
 
   async function handleDelete() {
     if (!project) return;
-    if (!window.confirm(`Excluir o projeto "${project.name}" e todas as suas tarefas?`)) {
-      return;
-    }
 
     setFormError(null);
-    setDeleting(true);
 
     try {
-      await deleteProject(project.id);
+      const deleted = await confirm({
+        title: 'Excluir projeto?',
+        description: `Esta ação não pode ser desfeita. O projeto "${project.name}" e todas as suas tarefas serão excluídos.`,
+        confirmLabel: 'Excluir',
+        loadingLabel: 'Excluindo…',
+        action: () => deleteProject(project.id),
+      });
+      if (!deleted) return;
+
       toast.success('Projeto excluído.');
       navigate('/projects');
     } catch (err) {
       notifyError(err, 'Não foi possível excluir o projeto.');
-      setDeleting(false);
     }
   }
 
-  if (loading && !project) {
+  // Esqueleto enquanto carrega; erro de rede/5xx com "Tentar novamente"; 400/403/404 com
+  // "Voltar para projetos" (repetir nao resolve, PRJ-19).
+  if (!project) {
     return (
-      <div role="status" aria-label="Carregando projeto…" className="flex flex-col gap-6">
-        <span className="sr-only">Carregando projeto…</span>
-        <div className="flex flex-col gap-3">
-          <Skeleton className="w-1/3" />
-          <Skeleton className="w-2/3" />
-        </div>
-        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 3 }, (_, index) => (
-            <Skeleton key={index} variant="card" className="w-full" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !project) {
-    return (
-      <ErrorState message={error ?? 'Projeto não encontrado.'} onRetry={() => void reload()} retrying={loading} />
+      <ProjectUnavailable
+        error={error}
+        retryable={retryable}
+        retrying={loading}
+        onRetry={() => void reload()}
+      />
     );
   }
 
@@ -146,12 +142,7 @@ export function ProjectDetailPage() {
               </Button>
             )}
             {canDelete && (
-              <Button
-                variant="danger"
-                onClick={() => void handleDelete()}
-                loading={deleting}
-                loadingLabel="Excluindo…"
-              >
+              <Button variant="danger" onClick={() => void handleDelete()}>
                 Excluir
               </Button>
             )}
