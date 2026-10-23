@@ -21,6 +21,7 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // Sem source maps no build de producao: o nginx nao publica o codigo-fonte (D-032).
+    sourcemap: false,
   },
 });
