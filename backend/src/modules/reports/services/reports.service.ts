@@ -1,35 +1,32 @@
 import { Injectable } from '@nestjs/common';
-import { ProjectRole } from '../../../common/enums/project-role.enum.js';
+import { READ_ROLES } from '../../../common/enums/project-role.enum.js';
 import { TaskStatus } from '../../../common/enums/task-status.enum.js';
-import { ProjectMembersRepository } from '../../projects/repositories/project-members.repository.js';
 import { ProjectAccessService } from '../../projects/services/project-access.service.js';
+import { TasksService } from '../../tasks/services/tasks.service.js';
+import type { TaskAssigneeCount } from '../../tasks/tasks.types.js';
 import { ReportGroupBy } from '../dto/reports-query.dto.js';
-import { Task } from '../../tasks/entities/task.entity.js';
-import { TasksRepository } from '../../tasks/repositories/tasks.repository.js';
-
-export interface ReportGroup {
-  key: string;
-  label: string;
-  count: number;
-}
-
-export interface ReportView {
-  groupBy: ReportGroupBy;
-  total: number;
-  byStatus: Record<TaskStatus, number>;
-  groups: ReportGroup[];
-}
+import { ReportGroupDto, ReportResponseDto } from '../dto/report-response.dto.js';
 
 const UNASSIGNED_KEY = 'sem_responsavel';
 
+const UNASSIGNED_LABEL = 'Sem responsável';
+
+const STATUS_LABELS: Record<TaskStatus, string> = {
+  [TaskStatus.Pendente]: 'Pendente',
+  [TaskStatus.EmAndamento]: 'Em andamento',
+  [TaskStatus.Concluida]: 'Concluída',
+};
+
 /**
  * Relatorios agregados (D-015).
+ *
+ * A contagem e feita no banco (GROUP BY por status e por responsavel); aqui so se
+ * monta a resposta. Sem `projectId`, entram todos os projetos em que o usuario e membro.
  */
 @Injectable()
 export class ReportsService {
   constructor(
-    private readonly tasksRepository: TasksRepository,
-    private readonly membersRepository: ProjectMembersRepository,
+    private readonly tasksService: TasksService,
     private readonly accessService: ProjectAccessService,
   ) {}
 
@@ -37,8 +34,8 @@ export class ReportsService {
     userId: string,
     groupBy: ReportGroupBy = ReportGroupBy.Status,
     projectId?: string,
-  ): Promise<ReportView> {
-    const tasks = await this.collectTasks(userId, projectId);
+  ): Promise<ReportResponseDto> {
+    const projectIds = await this.resolveProjectIds(userId, projectId);
 
     const byStatus: Record<TaskStatus, number> = {
       [TaskStatus.Pendente]: 0,
@@ -46,67 +43,50 @@ export class ReportsService {
       [TaskStatus.Concluida]: 0,
     };
 
-    for (const task of tasks) {
-      byStatus[task.status] += 1;
+    for (const { status, count } of await this.tasksService.countByStatus(projectIds)) {
+      byStatus[status] = count;
     }
 
     const groups =
-      groupBy === ReportGroupBy.User ? this.groupByUser(tasks) : this.groupByStatus(byStatus);
+      groupBy === ReportGroupBy.User
+        ? this.groupByUser(await this.tasksService.countByAssignee(projectIds))
+        : this.groupByStatus(byStatus);
 
     return {
       groupBy,
-      total: tasks.length,
+      total: Object.values(byStatus).reduce((sum, count) => sum + count, 0),
       byStatus,
       groups,
     };
   }
 
-  private async collectTasks(userId: string, projectId?: string): Promise<Task[]> {
+  private async resolveProjectIds(userId: string, projectId?: string): Promise<string[]> {
     if (projectId) {
-      await this.accessService.requireRole(projectId, userId, [
-        ProjectRole.Owner,
-        ProjectRole.Admin,
-        ProjectRole.Member,
-        ProjectRole.Viewer,
-      ]);
-
-      return this.tasksRepository.findByProject(projectId);
+      await this.accessService.requireRole(projectId, userId, READ_ROLES);
+      return [projectId];
     }
 
-    const memberships = await this.membersRepository.findByUser(userId);
-    if (memberships.length === 0) {
-      return [];
-    }
-
-    return this.tasksRepository.findByProjectIds(memberships.map((m) => m.projectId));
+    return this.accessService.listProjectIdsOfUser(userId);
   }
 
-  private groupByStatus(byStatus: Record<TaskStatus, number>): ReportGroup[] {
+  private groupByStatus(byStatus: Record<TaskStatus, number>): ReportGroupDto[] {
     return Object.values(TaskStatus).map((status) => ({
       key: status,
-      label: status,
+      label: STATUS_LABELS[status],
       count: byStatus[status],
     }));
   }
 
-  private groupByUser(tasks: Task[]): ReportGroup[] {
-    const groups = new Map<string, ReportGroup>();
+  private groupByUser(counts: TaskAssigneeCount[]): ReportGroupDto[] {
+    const groups = counts.map(({ assigneeId, assigneeName, count }) => ({
+      key: assigneeId ?? UNASSIGNED_KEY,
+      label: assigneeName ?? UNASSIGNED_LABEL,
+      count,
+    }));
 
-    for (const task of tasks) {
-      const key = task.assigneeId ?? UNASSIGNED_KEY;
-      const label = task.assignee?.name ?? 'Sem responsavel';
-      const current = groups.get(key);
-
-      if (current) {
-        current.count += 1;
-        continue;
-      }
-
-      groups.set(key, { key, label, count: 1 });
-    }
-
-    return [...groups.values()].sort(
-      (a, b) => b.count - a.count || a.label.localeCompare(b.label),
+    // Desempate por key: dois responsaveis com o mesmo nome nao trocam de posicao entre execucoes.
+    return groups.sort(
+      (a, b) => b.count - a.count || a.label.localeCompare(b.label) || a.key.localeCompare(b.key),
     );
   }
 }

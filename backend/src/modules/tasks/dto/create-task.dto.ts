@@ -1,18 +1,23 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { TASK_STATUS_VALUES, TaskStatus } from '../../../common/enums/task-status.enum.js';
+import { Trim } from '../../../common/decorators/trim.decorator.js';
+import { IsDateOnly } from '../../../common/decorators/is-date-only.decorator.js';
+import { TASK_DESCRIPTION_MAX_LENGTH, TASK_TITLE_MAX_LENGTH } from '../tasks.types.js';
 
 export class CreateTaskDto {
   @ApiProperty({ example: 'Tarefa 1' })
+  @Trim()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(200)
+  @MaxLength(TASK_TITLE_MAX_LENGTH)
   title: string;
 
   @ApiPropertyOptional({ example: 'Detalhe da tarefa', nullable: true })
   @IsOptional()
+  @Trim({ emptyToNull: true })
   @IsString()
-  @MaxLength(4000)
+  @MaxLength(TASK_DESCRIPTION_MAX_LENGTH)
   description?: string | null;
 
   @ApiPropertyOptional({ enum: TASK_STATUS_VALUES, default: TaskStatus.Pendente })
@@ -25,8 +30,14 @@ export class CreateTaskDto {
   @IsUUID()
   assigneeId?: string | null;
 
-  @ApiPropertyOptional({ example: '2026-02-01', nullable: true })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date',
+    example: '2026-02-01',
+    nullable: true,
+    description: 'Data limite (YYYY-MM-DD)',
+  })
   @IsOptional()
-  @IsDateString()
+  @IsDateOnly()
   dueDate?: string | null;
 }

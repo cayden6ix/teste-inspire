@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthModule } from '../auth/auth.module.js';
 import { ProjectsModule } from '../projects/projects.module.js';
 import { UsersModule } from '../users/users.module.js';
 import { TasksController } from './controllers/tasks.controller.js';
@@ -10,14 +9,9 @@ import { TasksCsvService } from './services/tasks-csv.service.js';
 import { TasksService } from './services/tasks.service.js';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Task]),
-    AuthModule,
-    UsersModule,
-    ProjectsModule,
-  ],
+  imports: [TypeOrmModule.forFeature([Task]), UsersModule, ProjectsModule],
   controllers: [TasksController],
   providers: [TasksRepository, TasksService, TasksCsvService],
-  exports: [TasksService, TasksRepository],
+  exports: [TasksService],
 })
 export class TasksModule {}

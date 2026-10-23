@@ -3,77 +3,89 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ProjectRole } from '../../../common/enums/project-role.enum.js';
+import { CSV_IMPORT_MAX_ROWS } from '../../../common/constants/upload.constants.js';
+import { PaginatedResponse } from '../../../common/dto/paginated.dto.js';
+import { READ_ROLES, WRITE_ROLES } from '../../../common/enums/project-role.enum.js';
+import { SortOrder } from '../../../common/enums/sort-order.enum.js';
 import { TASK_STATUS_VALUES, TaskStatus } from '../../../common/enums/task-status.enum.js';
-import { ProjectMembersRepository } from '../../projects/repositories/project-members.repository.js';
+import { isValidDateOnly } from '../../../common/utils/date.util.js';
+import { toPaginatedResponse } from '../../../common/utils/pagination.util.js';
 import { ProjectAccessService } from '../../projects/services/project-access.service.js';
+import { User } from '../../users/entities/user.entity.js';
 import { UsersService } from '../../users/services/users.service.js';
 import { CreateTaskDto } from '../dto/create-task.dto.js';
+import { ImportErrorDto, ImportResultDto } from '../dto/import-result.dto.js';
+import { ListTasksQueryDto } from '../dto/list-tasks-query.dto.js';
+import { TaskResponseDto } from '../dto/task-response.dto.js';
 import { UpdateTaskDto } from '../dto/update-task.dto.js';
 import { Task } from '../entities/task.entity.js';
-import { TaskFilters, TasksRepository } from '../repositories/tasks.repository.js';
+import { TasksRepository } from '../repositories/tasks.repository.js';
+import {
+  TASK_DESCRIPTION_MAX_LENGTH,
+  TASK_TITLE_MAX_LENGTH,
+  type TaskAssigneeCount,
+  type TaskStatusCount,
+} from '../tasks.types.js';
 import { TasksCsvService } from './tasks-csv.service.js';
-
-export interface TaskView {
-  id: string;
-  projectId: string;
-  title: string;
-  description: string | null;
-  status: TaskStatus;
-  assigneeId: string | null;
-  assigneeName: string | null;
-  dueDate: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface ImportError {
-  row: number;
-  message: string;
-}
-
-export interface ImportResult {
-  created: number;
-  errors: ImportError[];
-}
-
-const READ_ROLES = [
-  ProjectRole.Owner,
-  ProjectRole.Admin,
-  ProjectRole.Member,
-  ProjectRole.Viewer,
-];
-
-const WRITE_ROLES = [ProjectRole.Owner, ProjectRole.Admin, ProjectRole.Member];
 
 @Injectable()
 export class TasksService {
   constructor(
     private readonly tasksRepository: TasksRepository,
-    private readonly membersRepository: ProjectMembersRepository,
     private readonly accessService: ProjectAccessService,
     private readonly usersService: UsersService,
     private readonly csvService: TasksCsvService,
   ) {}
 
-  async list(projectId: string, actorId: string, filters: TaskFilters): Promise<TaskView[]> {
+  /**
+   * Lista paginada das tarefas do projeto. Ordenacao padrao: mais recentes primeiro.
+   */
+  async list(
+    projectId: string,
+    actorId: string,
+    query: ListTasksQueryDto,
+  ): Promise<PaginatedResponse<TaskResponseDto>> {
     await this.accessService.requireRole(projectId, actorId, READ_ROLES);
-    const tasks = await this.tasksRepository.findByProject(projectId, filters);
-    return tasks.map((task) => this.toView(task));
+
+    if (query.dueFrom && query.dueTo && query.dueFrom > query.dueTo) {
+      throw new BadRequestException('A data limite inicial não pode ser posterior à data limite final.');
+    }
+
+    const [tasks, total] = await this.tasksRepository.findPageByProject(
+      projectId,
+      {
+        status: query.status,
+        assigneeId: query.assigneeId,
+        search: query.search,
+        dueFrom: query.dueFrom,
+        dueTo: query.dueTo,
+      },
+      {
+        sortBy: query.sortBy ?? 'createdAt',
+        order: query.order ?? SortOrder.Desc,
+      },
+      query,
+    );
+
+    return toPaginatedResponse(
+      tasks.map((task) => this.toView(task)),
+      total,
+      query,
+    );
   }
 
-  async findOne(projectId: string, taskId: string, actorId: string): Promise<TaskView> {
+  async findOne(projectId: string, taskId: string, actorId: string): Promise<TaskResponseDto> {
     await this.accessService.requireRole(projectId, actorId, READ_ROLES);
     const task = await this.tasksRepository.findByProjectAndId(projectId, taskId);
 
     if (!task) {
-      throw new NotFoundException('Tarefa nao encontrada');
+      throw new NotFoundException('Tarefa não encontrada.');
     }
 
     return this.toView(task);
   }
 
-  async create(projectId: string, actorId: string, dto: CreateTaskDto): Promise<TaskView> {
+  async create(projectId: string, actorId: string, dto: CreateTaskDto): Promise<TaskResponseDto> {
     await this.accessService.requireRole(projectId, actorId, WRITE_ROLES);
 
     const assigneeId = await this.resolveAssignee(projectId, dto.assigneeId);
@@ -97,12 +109,12 @@ export class TasksService {
     taskId: string,
     actorId: string,
     dto: UpdateTaskDto,
-  ): Promise<TaskView> {
+  ): Promise<TaskResponseDto> {
     await this.accessService.requireRole(projectId, actorId, WRITE_ROLES);
 
     const task = await this.tasksRepository.findByProjectAndId(projectId, taskId);
     if (!task) {
-      throw new NotFoundException('Tarefa nao encontrada');
+      throw new NotFoundException('Tarefa não encontrada.');
     }
 
     if (dto.title !== undefined) {
@@ -118,7 +130,11 @@ export class TasksService {
     }
 
     if (dto.assigneeId !== undefined) {
-      task.assigneeId = await this.resolveAssignee(projectId, dto.assigneeId);
+      const assigneeId = await this.resolveAssignee(projectId, dto.assigneeId);
+      // A relacao `assignee` veio carregada: no save, o TypeORM grava a FK a partir dela
+      // e ignoraria so a coluna. Coluna e relacao precisam mudar juntas.
+      task.assigneeId = assigneeId;
+      task.assignee = assigneeId ? ({ id: assigneeId } as User) : null;
     }
 
     if (dto.dueDate !== undefined) {
@@ -136,7 +152,7 @@ export class TasksService {
 
     const task = await this.tasksRepository.findByProjectAndId(projectId, taskId);
     if (!task) {
-      throw new NotFoundException('Tarefa nao encontrada');
+      throw new NotFoundException('Tarefa não encontrada.');
     }
 
     await this.tasksRepository.delete(task.id);
@@ -155,20 +171,51 @@ export class TasksService {
    * Importa tarefas em massa a partir de um CSV (D-014).
    *
    * Linhas invalidas sao devolvidas em `errors` e nao interrompem a importacao.
+   * Os responsaveis sao resolvidos com os membros do projeto pre-carregados (uma
+   * query) e as linhas validas sao inseridas em lotes, numa unica transacao.
    */
-  async importCsv(projectId: string, actorId: string, csvText: string): Promise<ImportResult> {
+  async importCsv(projectId: string, actorId: string, csvText: string): Promise<ImportResultDto> {
     await this.accessService.requireRole(projectId, actorId, WRITE_ROLES);
 
     const rows = this.csvService.parse(csvText);
-    const errors: ImportError[] = [];
-    const tasks: Task[] = [];
+    if (rows.length > CSV_IMPORT_MAX_ROWS) {
+      throw new BadRequestException(
+        `O arquivo excede o limite de ${CSV_IMPORT_MAX_ROWS} linhas por importação.`,
+      );
+    }
+
+    const memberIdsByEmail = await this.accessService.getMemberIdsByEmail(projectId);
+    const registeredEmails = await this.findRegisteredEmails(rows, memberIdsByEmail);
+
+    const errors: ImportErrorDto[] = [];
+    const tasks: Partial<Task>[] = [];
+    // created_at explicito e crescente por linha: a ultima linha do arquivo fica como a mais nova
+    // (ordem padrao createdAt desc), mesmo quando as linhas sao gravadas no mesmo instante.
+    const importedAt = Date.now();
 
     for (const [index, row] of rows.entries()) {
       const lineNumber = index + 2; // a linha 1 do CSV e o cabecalho
       const title = (row['titulo'] ?? '').trim();
 
       if (!title) {
-        errors.push({ row: lineNumber, message: 'titulo e obrigatorio' });
+        errors.push({ row: lineNumber, message: 'O título é obrigatório.' });
+        continue;
+      }
+
+      if (title.length > TASK_TITLE_MAX_LENGTH) {
+        errors.push({
+          row: lineNumber,
+          message: `O título deve ter no máximo ${TASK_TITLE_MAX_LENGTH} caracteres.`,
+        });
+        continue;
+      }
+
+      const description = (row['descricao'] ?? '').trim() || null;
+      if (description && description.length > TASK_DESCRIPTION_MAX_LENGTH) {
+        errors.push({
+          row: lineNumber,
+          message: `A descrição deve ter no máximo ${TASK_DESCRIPTION_MAX_LENGTH} caracteres.`,
+        });
         continue;
       }
 
@@ -176,54 +223,79 @@ export class TasksService {
       const status = (statusRaw || TaskStatus.Pendente) as TaskStatus;
 
       if (!TASK_STATUS_VALUES.includes(status)) {
-        errors.push({ row: lineNumber, message: `status invalido: ${statusRaw}` });
+        errors.push({ row: lineNumber, message: `Status inválido: ${statusRaw}.` });
         continue;
       }
 
-      const email = (row['responsavel_email'] ?? '').trim().toLowerCase();
+      const email = normalizeEmail(row['responsavel_email']);
       let assigneeId: string | null = null;
 
       if (email) {
-        const user = await this.usersService.findByEmail(email);
+        const memberId = memberIdsByEmail.get(email);
 
-        if (!user) {
-          errors.push({ row: lineNumber, message: `usuario nao encontrado: ${email}` });
-          continue;
-        }
-
-        const member = await this.membersRepository.findByProjectAndUser(projectId, user.id);
-        if (!member) {
+        if (!memberId) {
           errors.push({
             row: lineNumber,
-            message: `responsavel nao e membro do projeto: ${email}`,
+            message: registeredEmails.has(email)
+              ? `Responsável não é membro do projeto: ${email}.`
+              : `Usuário não encontrado: ${email}.`,
           });
           continue;
         }
 
-        assigneeId = user.id;
+        assigneeId = memberId;
       }
 
       const dueDate = (row['data_limite'] ?? '').trim();
-      if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
-        errors.push({ row: lineNumber, message: `data_limite invalida: ${dueDate}` });
+      if (dueDate && !isValidDateOnly(dueDate)) {
+        errors.push({ row: lineNumber, message: `Data limite inválida: ${dueDate}. Use o formato AAAA-MM-DD.` });
         continue;
       }
 
-      tasks.push(
-        this.tasksRepository.create({
-          projectId,
-          title,
-          description: (row['descricao'] ?? '').trim() || null,
-          status,
-          assigneeId,
-          dueDate: dueDate || null,
-        }),
-      );
+      tasks.push({
+        projectId,
+        title,
+        description,
+        status,
+        assigneeId,
+        dueDate: dueDate || null,
+        createdAt: new Date(importedAt + index),
+      });
     }
 
-    const saved = tasks.length > 0 ? await this.tasksRepository.save(tasks) : [];
+    const created = tasks.length > 0 ? await this.tasksRepository.insertInBatches(tasks) : 0;
 
-    return { created: saved.length, errors };
+    return { created, errors };
+  }
+
+  /** Contagem por status nos projetos informados (relatorios, D-015). */
+  countByStatus(projectIds: string[]): Promise<TaskStatusCount[]> {
+    return this.tasksRepository.countByStatus(projectIds);
+  }
+
+  /** Contagem por responsavel nos projetos informados (relatorios, D-015). */
+  countByAssignee(projectIds: string[]): Promise<TaskAssigneeCount[]> {
+    return this.tasksRepository.countByAssignee(projectIds);
+  }
+
+  /**
+   * Dos e-mails do CSV que nao sao de membros, quais estao cadastrados: so serve
+   * para diferenciar "não é membro" de "usuário não encontrado" (uma query).
+   */
+  private async findRegisteredEmails(
+    rows: Record<string, string>[],
+    memberIdsByEmail: Map<string, string>,
+  ): Promise<Set<string>> {
+    const unknown = new Set<string>();
+
+    for (const row of rows) {
+      const email = normalizeEmail(row['responsavel_email']);
+      if (email && !memberIdsByEmail.has(email)) {
+        unknown.add(email);
+      }
+    }
+
+    return this.usersService.findRegisteredEmails([...unknown]);
   }
 
   /**
@@ -237,15 +309,14 @@ export class TasksService {
       return null;
     }
 
-    const member = await this.membersRepository.findByProjectAndUser(projectId, assigneeId);
-    if (!member) {
-      throw new BadRequestException('O responsavel precisa ser membro do projeto');
+    if (!(await this.accessService.isMember(projectId, assigneeId))) {
+      throw new BadRequestException('O responsável precisa ser membro do projeto.');
     }
 
     return assigneeId;
   }
 
-  private toView(task: Task): TaskView {
+  private toView(task: Task): TaskResponseDto {
     return {
       id: task.id,
       projectId: task.projectId,
@@ -259,4 +330,8 @@ export class TasksService {
       updatedAt: task.updatedAt,
     };
   }
+}
+
+function normalizeEmail(value: string | undefined): string {
+  return (value ?? '').trim().toLowerCase();
 }

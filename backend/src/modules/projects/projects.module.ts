@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthModule } from '../auth/auth.module.js';
 import { UsersModule } from '../users/users.module.js';
 import { ProjectMembersController } from './controllers/project-members.controller.js';
 import { ProjectsController } from './controllers/projects.controller.js';
@@ -13,11 +12,7 @@ import { ProjectMembersService } from './services/project-members.service.js';
 import { ProjectsService } from './services/projects.service.js';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Project, ProjectMember]),
-    AuthModule,
-    UsersModule,
-  ],
+  imports: [TypeOrmModule.forFeature([Project, ProjectMember]), UsersModule],
   controllers: [ProjectsController, ProjectMembersController],
   providers: [
     ProjectsRepository,
@@ -26,12 +21,7 @@ import { ProjectsService } from './services/projects.service.js';
     ProjectMembersService,
     ProjectAccessService,
   ],
-  exports: [
-    ProjectsService,
-    ProjectMembersService,
-    ProjectAccessService,
-    ProjectsRepository,
-    ProjectMembersRepository,
-  ],
+  // Outros modulos (tarefas, relatorios) usam apenas o ProjectAccessService.
+  exports: [ProjectAccessService],
 })
 export class ProjectsModule {}

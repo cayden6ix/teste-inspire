@@ -5,27 +5,34 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ProjectRole } from '../../../common/enums/project-role.enum.js';
+import { PaginatedResponse } from '../../../common/dto/paginated.dto.js';
+import {
+  MANAGE_ROLES,
+  ProjectRole,
+  READ_ROLES,
+} from '../../../common/enums/project-role.enum.js';
+import { toPaginatedResponse } from '../../../common/utils/pagination.util.js';
 import { UsersService } from '../../users/services/users.service.js';
 import { AddMemberDto } from '../dto/add-member.dto.js';
+import { ListMembersQueryDto } from '../dto/list-members-query.dto.js';
+import { ProjectMemberResponseDto } from '../dto/project-member-response.dto.js';
 import { UpdateMemberRoleDto } from '../dto/update-member-role.dto.js';
+import { ProjectMember } from '../entities/project-member.entity.js';
 import { ProjectMembersRepository } from '../repositories/project-members.repository.js';
 import { ProjectAccessService } from './project-access.service.js';
 
-export interface ProjectMemberView {
-  id: string;
-  userId: string;
-  name: string;
-  email: string;
-  role: ProjectRole;
-}
+/**
+ * Papeis que um `admin` pode atribuir e sobre os quais pode agir (D-013).
+ * `admin` nunca altera nem remove outro `admin` ou o `owner`.
+ */
+const ADMIN_MANAGEABLE_ROLES: ProjectRole[] = [ProjectRole.Member, ProjectRole.Viewer];
 
 /**
- * Papeis que um `admin` pode atribuir. `owner` e `admin` sao exclusivos do
- * proprio `owner` do projeto (D-013).
+ * Regras de membros (D-013):
+ * - `owner` adiciona, altera e remove qualquer membro, exceto a si mesmo e o `owner`;
+ * - `admin` so adiciona, altera e remove membros `member`/`viewer` e so atribui esses papeis;
+ * - o papel `owner` nasce apenas na criacao do projeto: nao pode ser atribuido nem retirado.
  */
-const ADMIN_ASSIGNABLE_ROLES: ProjectRole[] = [ProjectRole.Member, ProjectRole.Viewer];
-
 @Injectable()
 export class ProjectMembersService {
   constructor(
@@ -34,43 +41,48 @@ export class ProjectMembersService {
     private readonly accessService: ProjectAccessService,
   ) {}
 
-  async list(projectId: string, actorId: string): Promise<ProjectMemberView[]> {
-    await this.accessService.requireRole(projectId, actorId, [
-      ProjectRole.Owner,
-      ProjectRole.Admin,
-      ProjectRole.Member,
-      ProjectRole.Viewer,
-    ]);
+  /**
+   * Lista paginada dos membros do projeto, com filtro opcional por papel.
+   */
+  async list(
+    projectId: string,
+    actorId: string,
+    query: ListMembersQueryDto,
+  ): Promise<PaginatedResponse<ProjectMemberResponseDto>> {
+    await this.accessService.requireRole(projectId, actorId, READ_ROLES);
 
-    const members = await this.membersRepository.findByProject(projectId);
+    const [members, total] = await this.membersRepository.findPageByProject(
+      projectId,
+      query.role,
+      query,
+    );
 
-    return members.map((member) => ({
-      id: member.id,
-      userId: member.userId,
-      name: member.user?.name ?? '',
-      email: member.user?.email ?? '',
-      role: member.role,
-    }));
+    return toPaginatedResponse(
+      members.map((member) => ({
+        id: member.id,
+        userId: member.userId,
+        name: member.user?.name ?? '',
+        email: member.user?.email ?? '',
+        role: member.role,
+      })),
+      total,
+      query,
+    );
   }
 
-  async add(projectId: string, actorId: string, dto: AddMemberDto): Promise<ProjectMemberView> {
-    const actorRole = await this.accessService.requireRole(projectId, actorId, [
-      ProjectRole.Owner,
-      ProjectRole.Admin,
-    ]);
+  async add(projectId: string, actorId: string, dto: AddMemberDto): Promise<ProjectMemberResponseDto> {
+    const actorRole = await this.accessService.requireRole(projectId, actorId, MANAGE_ROLES);
 
-    if (actorRole === ProjectRole.Admin && !ADMIN_ASSIGNABLE_ROLES.includes(dto.role)) {
-      throw new ForbiddenException('Admin so pode adicionar membros com papel member ou viewer');
-    }
+    this.assertAssignable(actorRole, dto.role);
 
     const user = await this.usersService.findById(dto.userId);
     if (!user) {
-      throw new NotFoundException('Usuario nao encontrado');
+      throw new NotFoundException('Usuário não encontrado.');
     }
 
     const existing = await this.membersRepository.findByProjectAndUser(projectId, dto.userId);
     if (existing) {
-      throw new ConflictException('Usuario ja e membro do projeto');
+      throw new ConflictException('Usuário já é membro do projeto.');
     }
 
     const member = await this.membersRepository.save(
@@ -95,24 +107,20 @@ export class ProjectMembersService {
     actorId: string,
     userId: string,
     dto: UpdateMemberRoleDto,
-  ): Promise<ProjectMemberView> {
-    const actorRole = await this.accessService.requireRole(projectId, actorId, [
-      ProjectRole.Owner,
-      ProjectRole.Admin,
-    ]);
+  ): Promise<ProjectMemberResponseDto> {
+    const actorRole = await this.accessService.requireRole(projectId, actorId, MANAGE_ROLES);
 
-    if (actorRole === ProjectRole.Admin && !ADMIN_ASSIGNABLE_ROLES.includes(dto.role)) {
-      throw new ForbiddenException('Admin so pode atribuir os papeis member ou viewer');
+    if (userId === actorId) {
+      throw new BadRequestException('Você não pode alterar o seu próprio papel no projeto.');
     }
 
-    const member = await this.membersRepository.findByProjectAndUser(projectId, userId);
-    if (!member) {
-      throw new NotFoundException('Membro nao encontrado');
-    }
+    this.assertAssignable(actorRole, dto.role);
 
-    if (member.role === ProjectRole.Owner && actorRole !== ProjectRole.Owner) {
-      throw new ForbiddenException('Somente o owner altera o papel do owner');
-    }
+    const member = await this.findMemberOrFail(projectId, userId);
+    this.assertCanManage(actorRole, member, {
+      owner: 'O papel do proprietário do projeto não pode ser alterado.',
+      admin: 'Administradores só podem alterar o papel de membros com papel membro ou visualizador.',
+    });
 
     member.role = dto.role;
     await this.membersRepository.save(member);
@@ -128,22 +136,65 @@ export class ProjectMembersService {
     };
   }
 
+  /**
+   * Remove o membro e, na mesma transacao, desatribui as tarefas dele no projeto:
+   * um ex-membro nao pode continuar como responsavel (D-013).
+   */
   async remove(projectId: string, actorId: string, userId: string): Promise<void> {
-    await this.accessService.requireRole(projectId, actorId, [ProjectRole.Owner, ProjectRole.Admin]);
+    const actorRole = await this.accessService.requireRole(projectId, actorId, MANAGE_ROLES);
 
+    if (userId === actorId) {
+      throw new BadRequestException('Você não pode remover a si mesmo do projeto.');
+    }
+
+    const member = await this.findMemberOrFail(projectId, userId);
+    this.assertCanManage(actorRole, member, {
+      owner: 'O proprietário do projeto não pode ser removido.',
+      admin: 'Administradores só podem remover membros com papel membro ou visualizador.',
+    });
+
+    await this.membersRepository.removeAndUnassignTasks(member);
+  }
+
+  private async findMemberOrFail(projectId: string, userId: string): Promise<ProjectMember> {
     const member = await this.membersRepository.findByProjectAndUser(projectId, userId);
     if (!member) {
-      throw new NotFoundException('Membro nao encontrado');
+      throw new NotFoundException('Membro não encontrado.');
+    }
+    return member;
+  }
+
+  /**
+   * O papel `owner` nunca e atribuido por aqui; `admin` so atribui `member`/`viewer`.
+   */
+  private assertAssignable(actorRole: ProjectRole, role: ProjectRole): void {
+    if (role === ProjectRole.Owner) {
+      throw new BadRequestException(
+        'O papel de proprietário é definido apenas na criação do projeto e não pode ser atribuído.',
+      );
     }
 
-    if (member.role === ProjectRole.Owner) {
-      throw new BadRequestException('O owner do projeto nao pode ser removido');
+    if (actorRole === ProjectRole.Admin && !ADMIN_MANAGEABLE_ROLES.includes(role)) {
+      throw new ForbiddenException(
+        'Administradores só podem atribuir os papéis membro ou visualizador.',
+      );
+    }
+  }
+
+  /**
+   * O `owner` do projeto e intocavel; `admin` so age sobre `member`/`viewer`.
+   */
+  private assertCanManage(
+    actorRole: ProjectRole,
+    target: ProjectMember,
+    messages: { owner: string; admin: string },
+  ): void {
+    if (target.role === ProjectRole.Owner) {
+      throw new ForbiddenException(messages.owner);
     }
 
-    if (member.userId === actorId) {
-      throw new BadRequestException('Voce nao pode remover a si mesmo do projeto');
+    if (actorRole === ProjectRole.Admin && !ADMIN_MANAGEABLE_ROLES.includes(target.role)) {
+      throw new ForbiddenException(messages.admin);
     }
-
-    await this.membersRepository.delete(member.id);
   }
 }
