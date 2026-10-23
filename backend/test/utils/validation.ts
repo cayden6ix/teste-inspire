@@ -1,16 +1,5 @@
-import { BadRequestException, ValidationPipe } from '@nestjs/common';
-import { buildValidationException } from '../../src/common/validation/validation-exception.factory.js';
-
-/** Mesma configuracao do ValidationPipe global de `src/main.ts`. */
-export function createValidationPipe(): ValidationPipe {
-  return new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    transformOptions: { enableImplicitConversion: true },
-    exceptionFactory: buildValidationException,
-  });
-}
+import { BadRequestException } from '@nestjs/common';
+import { createValidationPipe } from '../../src/common/validation/validation.pipe.js';
 
 export type ResultadoValidacao<T> =
   | { valido: true; instancia: T; mensagens: [] }

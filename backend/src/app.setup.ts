@@ -1,10 +1,9 @@
-import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
-import { buildValidationException } from './common/validation/validation-exception.factory.js';
+import { createValidationPipe } from './common/validation/validation.pipe.js';
 import { parseTrustProxy } from './config/env/env.validation.js';
 
 /**
@@ -40,15 +39,7 @@ export function configureApp(app: NestExpressApplication): void {
 
   app.setGlobalPrefix(configService.getOrThrow<string>('API_PREFIX'));
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-      exceptionFactory: buildValidationException,
-    }),
-  );
+  app.useGlobalPipes(createValidationPipe());
 
   app.useGlobalFilters(new AllExceptionsFilter());
 

@@ -1,4 +1,4 @@
-import { BadRequestException, ValidationPipe } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import {
   IsEmail,
   IsInt,
@@ -12,6 +12,7 @@ import {
   buildValidationException,
   translateValidationErrors,
 } from './validation-exception.factory.js';
+import { createValidationPipe } from './validation.pipe.js';
 import { CreateUserDto } from '../../modules/users/dto/create-user.dto.js';
 import { ListTasksQueryDto } from '../../modules/tasks/dto/list-tasks-query.dto.js';
 import { ReportsQueryDto } from '../../modules/reports/dto/reports-query.dto.js';
@@ -33,14 +34,8 @@ class EmailDto {
   email: string;
 }
 
-/** Mesma configuração do ValidationPipe global de main.ts. */
-const pipe = new ValidationPipe({
-  whitelist: true,
-  forbidNonWhitelisted: true,
-  transform: true,
-  transformOptions: { enableImplicitConversion: true },
-  exceptionFactory: buildValidationException,
-});
+/** O mesmo ValidationPipe global da API (app.setup.ts). */
+const pipe = createValidationPipe();
 
 async function mensagens(
   value: unknown,
@@ -125,7 +120,7 @@ describe('translateValidationErrors', () => {
   });
 
   it('dá prioridade ao tipo sobre os limites: "abc" em campo inteiro mostra só o tipo', async () => {
-    // 'abc' vira NaN na conversão implícita e viola IsInt, Min e Max ao mesmo tempo.
+    // 'abc' (texto) viola IsInt, Min e Max ao mesmo tempo.
     expect(await mensagens({ name: 'ok', limit: 'abc' }, AmostraDto)).toEqual([
       'O campo "Limite" deve ser um número inteiro.',
     ]);

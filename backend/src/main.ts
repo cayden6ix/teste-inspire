@@ -4,12 +4,14 @@ import { Logger } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
 import { configureApp } from './app.setup.js';
+import { warnIfWeakJwtSecret } from './config/env/jwt-secret.check.js';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   const configService = app.get(ConfigService);
 
   configureApp(app);
+  warnIfWeakJwtSecret(configService.getOrThrow<string>('JWT_SECRET'), Logger);
   app.enableShutdownHooks();
 
   const port = configService.getOrThrow<number>('PORT');
