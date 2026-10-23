@@ -42,12 +42,12 @@ Organizadas pelos requisitos do desafio.
 | **Usuários e autenticação** | Cadastro (`POST /api/auth/register`) e login (`POST /api/auth/login`). Senha com bcrypt, token JWT de curta duração (1 h por padrão), sem sessão no servidor. |
 | **Níveis de acesso** | Papéis **por projeto**: `owner`, `admin`, `member` e `viewer` (não existe perfil global). Quem cria o projeto vira `owner`. Veja a [matriz](#12-autorização-por-papel-de-projeto). |
 | **Usuário em vários projetos** | Relação N:N (`project_members`) com um papel por vínculo. A mesma pessoa pode ser `owner` de um projeto e `viewer` de outro. |
-| **Projetos** | CRUD completo, listagem paginada só com os projetos em que a pessoa é membro, busca por nome/descrição e ordenação. |
-| **Tarefas** | CRUD dentro de um projeto, com status (`pendente`, `em_andamento`, `concluida`), responsável (que precisa ser membro do projeto) e data limite. Filtros por status, responsável, texto e intervalo de datas; ordenação por título, status, data limite, criação ou atualização. |
-| **Exportação e importação** | `GET /api/projects/:projectId/tasks/export` devolve todas as tarefas em CSV. `POST /api/projects/:projectId/tasks/import` cria tarefas em massa a partir de um CSV: linhas válidas são importadas e as inválidas voltam em `errors[]` com o número da linha. |
+| **Projetos** | CRUD completo, listagem paginada só com os projetos em que a pessoa é membro, busca por nome/descrição (sem diferenciar maiúsculas nem acentos) e ordenação. |
+| **Tarefas** | CRUD dentro de um projeto, com status (`pendente`, `em_andamento`, `concluida`), responsável (que precisa ser membro do projeto) e data limite. Filtros por status, responsável, texto (sem diferenciar maiúsculas nem acentos: `descricao` acha `Descrição`) e intervalo de datas; ordenação por título, status, data limite, criação ou atualização. |
+| **Exportação e importação** | `GET /api/projects/:projectId/tasks/export` devolve todas as tarefas em CSV (UTF-8 com BOM, para o Excel; em ordem cronológica). `POST /api/projects/:projectId/tasks/import` cria tarefas em massa a partir de um CSV: linhas válidas são importadas e as inválidas voltam em `errors[]` com o número da linha; arquivo que não é CSV ou sem a coluna `titulo` é recusado com o motivo. Exportar e importar de volta preserva a ordem das tarefas. |
 | **Relatórios** | `GET /api/reports?groupBy=status\|user&projectId=` agrega tarefas por status ou por responsável, de um projeto ou de todos os projetos da pessoa. |
-| **Paginação e filtros** | Todas as listagens usam o envelope `{ data, meta }` (página padrão 1, 15 itens por página, máximo 100) com ordenação determinística. |
-| **Interface** | SPA com login/cadastro, projetos, detalhe do projeto, membros e papéis, lista de tarefas, **quadro Kanban** (arrastar uma tarefa muda o status), relatórios, toasts e estados de carregamento, vazio e erro. |
+| **Paginação e filtros** | Todas as listagens usam o envelope `{ data, meta }` (página padrão 1, 15 itens por página, máximo 100; na busca de usuários, 10) com ordenação determinística. |
+| **Interface** | SPA com login/cadastro, projetos, detalhe do projeto, membros e papéis, lista de tarefas e **quadro Kanban** (arrastar uma tarefa muda o status) com o mesmo detalhe/edição da tarefa, relatórios, diálogo de confirmação nas exclusões, toasts e estados de carregamento, vazio e erro. |
 
 ## 3. Tecnologias
 
@@ -58,8 +58,8 @@ Versões reais instaladas (lidas dos `package.json`, dos `node_modules` e dos Do
 | Runtime | Node.js 24 (imagens `node:24-alpine`) |
 | Backend | NestJS 12 · TypeScript 6 · TypeORM 1.1 · PostgreSQL 17 · Passport JWT · bcrypt · class-validator / class-transformer · Swagger (`@nestjs/swagger`) · helmet · `@nestjs/throttler` · csv-parse / csv-stringify |
 | Frontend | React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 · React Router 7 · Zustand 5 · axios |
-| Testes | Vitest 4 (com SWC) · supertest · `@nestjs/testing` |
-| Qualidade | oxlint (backend) · `tsc` estrito nos dois projetos |
+| Testes | Vitest 4 (backend com SWC, frontend em ambiente node) · supertest · `@nestjs/testing` |
+| Qualidade | oxlint nos dois projetos (avisos falham no frontend) · `tsc` estrito nos dois projetos |
 | Entrega | Docker (multi-stage, usuário não-root) · Docker Compose · nginx 1.29 (serve o SPA e faz proxy da API) |
 
 ## 4. Como rodar com Docker
@@ -77,7 +77,8 @@ git clone <url-do-repositorio>
 cd teste-inspire
 
 # 2. Crie o .env a partir do exemplo (o JWT_SECRET de exemplo já tem 32+ caracteres,
-#    mas é público: troque-o fora de uma avaliação local)
+#    mas é público: a API sobe e registra um aviso no log; fora de uma avaliação
+#    local, gere um segredo próprio com `openssl rand -hex 32`)
 cp .env.example .env
 
 # 3. Suba tudo: build das imagens, banco, migrations, API e interface
@@ -131,6 +132,8 @@ Para zerar o banco e recomeçar: `docker compose down -v && docker compose up -d
 | --- | --- | --- |
 | `defina JWT_SECRET no arquivo .env da raiz (veja .env.example)` ao subir | O `.env` não existe na raiz (ou está sem `JWT_SECRET`) | `cp .env.example .env`. |
 | A API reinicia em loop e o log mostra `Configuração de ambiente inválida: ... JWT_SECRET ... no mínimo 32 caracteres` | `JWT_SECRET` curto | Use um segredo com 32 caracteres ou mais (por exemplo, `openssl rand -hex 32`) e rode `docker compose up -d`. |
+| O log da API mostra `WARN [Seguranca] JWT_SECRET parece ser o valor de exemplo do .env.example ou um segredo fraco` | O `.env` usa o segredo público do exemplo (ou um previsível) | Para avaliação local, pode seguir. Em qualquer outro ambiente, gere um segredo (`openssl rand -hex 32`), troque no `.env` e rode `docker compose up -d`. |
+| A interface abre uma versão antiga depois de um rebuild | HTML antigo em cache (antes do `Cache-Control: no-cache`) | Recarregue a página sem cache (Ctrl+F5) uma vez. |
 | `port is already allocated` / `address already in use` | Outra aplicação usa 8080, 3000 ou 5432 | Mude `FRONTEND_PORT`, `BACKEND_PORT` ou `POSTGRES_PORT` no `.env` e suba de novo. Se mudar `BACKEND_PORT`, o Swagger passa a ficar nessa porta. |
 | `docker compose up` termina com `service "migrate" didn't complete successfully` e a API/interface não sobem | A migration falhou (por exemplo, banco inacessível ou erro de SQL) | `docker compose logs migrate` mostra o erro. Corrija e rode `docker compose up -d` de novo (o `migrate` roda outra vez; se precisar, `docker compose run --rm migrate`). |
 | Muitos erros **429** (`Muitas requisições...`) | Rate limit por IP (login 10/min, cadastro 5/min, geral 100/min) | Aguarde o tempo do header `Retry-After`; para testes de carga, defina `THROTTLE_DISABLED=true` no `.env` e rode `docker compose up -d`. |
@@ -180,7 +183,7 @@ Há dois arquivos de exemplo: [`.env.example`](.env.example) (raiz, lido pelo `d
 | `DATABASE_SSL` | não | `false` | SSL da conexão com o banco, independente do `NODE_ENV`: `false`, `require` (cifra sem validar o certificado) ou `verify-full` (cifra e valida). O Postgres do compose não oferece SSL. |
 | `DATABASE_SYNCHRONIZE` | não | `false` | Mantenha `false`: o schema vem das migrations. |
 | `DATABASE_LOGGING` | não | `false` | Loga as queries SQL. |
-| `JWT_SECRET` | **sim** | – | Segredo de assinatura do JWT, mínimo de 32 caracteres. |
+| `JWT_SECRET` | **sim** | – | Segredo de assinatura do JWT, mínimo de 32 caracteres. Se for o valor do `.env.example` ou parecer fraco, a API sobe, mas registra um `WARN` no boot (D-031). |
 | `JWT_EXPIRES_IN` | não | `1h` | Validade do token: número de segundos ou duração com unidade (`15m`, `1h`, `7d`). Valor fora desse formato impede a API de subir. |
 | `CORS_ORIGINS` | não | `http://localhost:5173` | Origens permitidas, separadas por vírgula. No compose o padrão é `http://localhost:8080`. |
 | `SWAGGER_ENABLED` | não | `true` | Publica o Swagger em `/docs`. |
@@ -196,7 +199,7 @@ Variáveis que só o `docker-compose.yml` usa (arquivo `.env` da raiz): `POSTGRE
 
 ## 7. Migrations e seed
 
-O schema do banco é gerenciado **exclusivamente por migrations do TypeORM** (`backend/src/database/migrations`, 6 arquivos, uma por propósito). O `synchronize` fica desligado em todos os ambientes.
+O schema do banco é gerenciado **exclusivamente por migrations do TypeORM** (`backend/src/database/migrations`, 7 arquivos, uma por propósito; a mais recente, `1792681800006-EnableUnaccentExtension`, habilita a extensão `unaccent` usada nas buscas, D-029). O `synchronize` fica desligado em todos os ambientes.
 
 Os comandos rodam em `backend/` e usam o código compilado em `dist/` (assim funcionam também dentro do container de produção, que só tem `dist` e `node_modules`):
 
@@ -217,14 +220,14 @@ O seed (`backend/src/database/seeds/seed.ts`) não cria tabelas: rode-o depois d
 
 ## 8. Testes e CI
 
-O backend tem **686 testes** (382 unitários e 304 e2e, na data desta revisão). **Não há testes automatizados no frontend** (só `tsc` estrito e build): é um ponto de melhoria conhecido.
+O backend tem **786 testes** (439 unitários e 347 e2e) e o frontend **95 testes unitários**, na data desta revisão.
 
 | Comando (em `backend/`) | O que roda |
 | --- | --- |
 | `npm run test` | Unitários (`src/**/*.spec.ts` e `test/**/*.spec.ts`): Vitest + SWC, **sem banco**, repositórios mockados. |
 | `npm run test:cov` | Unitários com cobertura (relatório em `backend/coverage`; cerca de 78% das instruções). |
 | `npm run test:e2e` | E2E (`test/e2e/*.e2e-spec.ts`): a aplicação inteira com `supertest` contra um **PostgreSQL real**, em banco separado. |
-| `npm run test:e2e:cov` | E2E com cobertura (`backend/coverage/e2e`; cerca de 92% das instruções). Migrations e seed ficam fora da conta. |
+| `npm run test:e2e:cov` | E2E com cobertura (`backend/coverage/e2e`; cerca de 95% das instruções). Migrations e seed ficam fora da conta. |
 
 **Como preparar o e2e.** O banco de testes é separado do de desenvolvimento e o nome **precisa terminar em `_test`** (o setup recusa qualquer outro, para nunca tocar o `app_db`). Com o Postgres do compose no ar:
 
@@ -236,15 +239,17 @@ cd backend && npm run test:e2e
 
 Por padrão a URL é `postgres://app:app@localhost:5432/app_test`; use `TEST_DATABASE_URL` para apontar outro banco (também terminado em `_test`). A cada execução o setup **recria o schema `public` do banco de testes** e aplica as migrations reais a partir de `src` (por isso o banco é descartável). Duas execuções simultâneas no mesmo banco se serializam por um *advisory lock* do Postgres. Os e2e definem o próprio ambiente (segredo JWT, Swagger e rate limit desligados), sem ler o `backend/.env`; o rate limit é ligado só no teste dedicado do 429.
 
-O que os e2e cobrem: cadastro e login, 401 sem token, IDOR entre projetos, matriz de papéis, regras de membros, paginação e ordenação estável, CSV (exportar, importar, erros por linha, fórmulas, 5000 linhas), relatórios, erros padronizados, rate limit e o Swagger. Os unitários cobrem services, DTOs, filtro de exceções, validação de ambiente, paginação, escape de `LIKE` e o seed.
+O que os e2e cobrem: cadastro e login (com os limites de tamanho), 401 sem token, IDOR entre projetos (404 igual para projeto alheio e inexistente), matriz de papéis, regras de membros, busca de usuários restrita, busca sem acento, tipos sem conversão implícita, paginação e ordenação estável, CSV (exportar com BOM e em ordem cronológica, importar, cabeçalho e arquivo inválidos, status flexível, erros por linha, fórmulas, 5000 linhas, ciclo exportar -> importar preservando a ordem), relatórios, erros padronizados, rate limit e o Swagger. Os unitários cobrem services, DTOs, filtro de exceções, validação de ambiente, aviso do `JWT_SECRET`, paginação, escape de `LIKE` e o seed.
+
+**Frontend** (em `frontend/`): `npm run lint` (oxlint, aviso também falha), `npm run typecheck`, `npm run test` (Vitest, lógica pura: matriz de papéis, mensagens de erro, JWT, formatação, destino depois do login, título da aba, diálogo de confirmação, sessão e o quadro) e `npm run build`. Não há testes de componente nem E2E de navegador (seção 15).
 
 **CI** (`.github/workflows/ci.yml`, em push e pull request para `main`):
 
 - **backend:** Postgres 17 como *service container* (banco `app_test`), `npm ci`, `npm run lint`, `tsc --noEmit`, `npm run build`, `npm run test:cov` (com o relatório publicado como artefato) e `npm run test:e2e`;
-- **frontend:** `npm ci`, `npm run typecheck` e `npm run build`;
+- **frontend:** `npm ci`, `npm run lint`, `npm run typecheck`, `npm run test` e `npm run build`;
 - **docker:** valida o compose (`docker compose --env-file .env.example config`) e constrói as duas imagens, sem publicar.
 
-A estratégia está na decisão [D-008](docs/partitura.md#d-008---estratégia-de-testes).
+A estratégia está nas decisões [D-008](docs/partitura.md#d-008---estratégia-de-testes) e [D-034](docs/partitura.md#d-034---lint-e-testes-do-frontend).
 
 ## 9. Documentação da API
 
@@ -308,7 +313,7 @@ Em erros de validação `message` é uma lista; nos demais é um texto (por exem
 | --- | --- |
 | Auth | `POST /auth/register`, `POST /auth/login` |
 | Saúde | `GET /health` |
-| Usuários | `GET /users` (busca paginada, usada para adicionar membros) |
+| Usuários | `GET /users` (busca paginada, até 10 por página, para quem é `owner` ou `admin` de algum projeto: usada para adicionar membros) |
 | Projetos | `POST /projects`, `GET /projects`, `GET/PATCH/DELETE /projects/:projectId` |
 | Membros | `GET/POST /projects/:projectId/members`, `PATCH/DELETE /projects/:projectId/members/:userId` |
 | Tarefas | `GET/POST /projects/:projectId/tasks`, `GET/PATCH/DELETE /projects/:projectId/tasks/:taskId` |
@@ -416,6 +421,14 @@ Resumo das decisões. O texto completo de cada uma (contexto, decisão, justific
 | [D-024](docs/partitura.md#d-024---papéis-e-matriz-de-autorização) Papéis | Matriz de autorização única, aplicada nos services. |
 | [D-025](docs/partitura.md#d-025---rate-limit-e-endurecimento-de-segurança) Segurança | Rate limit, SSL desacoplado, Swagger configurável, guarda no seed. |
 | [D-026](docs/partitura.md#d-026---serviço-migrate-one-shot-no-compose) Migrate | Serviço one-shot no compose: subida em um comando sem migrar no boot da API. |
+| [D-027](docs/partitura.md#d-027---quem-não-é-membro-recebe-404) Não-membro = 404 | Projeto alheio responde igual a um inexistente: ids válidos não vazam. |
+| [D-028](docs/partitura.md#d-028---busca-de-usuários-restrita-a-quem-gerencia-membros) Busca de usuários | Só para quem gerencia membros, até 10 por página: menos enumeração de e-mails. |
+| [D-029](docs/partitura.md#d-029---busca-sem-diferenciar-acentos-unaccent) Busca sem acento | `unaccent` do Postgres em todas as buscas, com o escape de curingas mantido. |
+| [D-030](docs/partitura.md#d-030---csv-com-bom-validação-do-arquivo-e-status-flexível) CSV | BOM para o Excel, exportação cronológica, arquivo e cabeçalho validados, status flexível. |
+| [D-031](docs/partitura.md#d-031---entrada-sem-conversão-implícita-limites-da-conta-e-aviso-de-jwt_secret) Entrada | Sem conversão implícita de tipos, limites da conta, aviso de `JWT_SECRET` fraco. |
+| [D-032](docs/partitura.md#d-032---cabeçalhos-de-segurança-e-cache-no-nginx-sem-source-maps) nginx | CSP e cabeçalhos de segurança no SPA, HTML sem cache, sem source maps. |
+| [D-033](docs/partitura.md#d-033---robustez-da-interface-estado-do-projeto-confirmação-e-quadro-com-teto) Interface | Estado do projeto, detalhe único da tarefa, diálogo de confirmação, quadro com teto, sessão. |
+| [D-034](docs/partitura.md#d-034---lint-e-testes-do-frontend) Frontend | oxlint e Vitest no frontend e no CI. |
 
 ## 11. Modelo de dados
 
@@ -463,23 +476,27 @@ erDiagram
   - `IDX_tasks_assignee_id`: relatório por usuário e filtro por responsável.
   - `IDX_project_members_user_id`: listar os projetos de uma pessoa.
   - Não há índice só em `project_members (project_id)`: a unique `(project_id, user_id)` já cobre essa busca.
+- **Extensões:** `uuid-ossp` (ids) e `unaccent` (buscas sem diferenciar acentos, D-029).
 
 ## 12. Autorização por papel de projeto
 
-Não existe perfil global de administrador: o acesso é decidido **dentro de cada projeto**, pelo papel do vínculo (`owner` > `admin` > `member` > `viewer`). Toda operação de tarefa ou membro passa por `ProjectAccessService.requireRole`, e as buscas sempre filtram por `projectId` + `id`, o que impede acessar uma tarefa de um projeto alheio (IDOR). Quem não é membro recebe 403 (`Você não faz parte deste projeto.`); quem é membro sem o papel necessário também recebe 403 (`Seu papel no projeto não permite esta ação.`).
+Não existe perfil global de administrador: o acesso é decidido **dentro de cada projeto**, pelo papel do vínculo (`owner` > `admin` > `member` > `viewer`). Toda operação de tarefa ou membro passa por `ProjectAccessService.requireRole`, e as buscas sempre filtram por `projectId` + `id`, o que impede acessar uma tarefa de um projeto alheio (IDOR). Quem **não é membro** recebe **404 `Projeto não encontrado.`**, a mesma resposta de um projeto inexistente, em todas as rotas do projeto (inclusive CSV e `GET /reports?projectId=`): um id válido de projeto alheio não se distingue de um inventado (D-027). Quem é membro sem o papel necessário recebe **403** (`Seu papel no projeto não permite esta ação.`).
 
-| Ação | owner | admin | member | viewer |
-| --- | :---: | :---: | :---: | :---: |
-| Ver projeto, tarefas, membros e relatório; exportar CSV | sim | sim | sim | sim |
-| Criar, editar e excluir tarefas; importar CSV | sim | sim | sim | não |
-| Editar o projeto (nome e descrição) | sim | sim | não | não |
-| Adicionar membro com papel `member` ou `viewer` | sim | sim | não | não |
-| Adicionar membro com papel `admin` | sim | não | não | não |
-| Alterar o papel de um `member` ou `viewer` | sim | sim | não | não |
-| Alterar o papel de um `admin` ou atribuir `admin` | sim | não | não | não |
-| Remover um `member` ou `viewer` | sim | sim | não | não |
-| Remover um `admin` | sim | não | não | não |
-| Excluir o projeto | sim | não | não | não |
+| Ação | owner | admin | member | viewer | não-membro |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| Ver projeto, tarefas, membros e relatório; exportar CSV | sim | sim | sim | sim | 404 |
+| Criar, editar e excluir tarefas; importar CSV | sim | sim | sim | 403 | 404 |
+| Editar o projeto (nome e descrição) | sim | sim | 403 | 403 | 404 |
+| Adicionar membro com papel `member` ou `viewer` | sim | sim | 403 | 403 | 404 |
+| Adicionar membro com papel `admin` | sim | 403 | 403 | 403 | 404 |
+| Alterar o papel de um `member` ou `viewer` | sim | sim | 403 | 403 | 404 |
+| Alterar o papel de um `admin` ou atribuir `admin` | sim | 403 | 403 | 403 | 404 |
+| Remover um `member` ou `viewer` | sim | sim | 403 | 403 | 404 |
+| Remover um `admin` | sim | 403 | 403 | 403 | 404 |
+| Excluir o projeto | sim | 403 | 403 | 403 | 404 |
+| Buscar usuários (`GET /users`) | sim | sim | 403\* | 403\* | 403\* |
+
+\* A busca de usuários não é por projeto: vale "é `owner` ou `admin` de **pelo menos um** projeto" (D-028).
 
 Regras adicionais (`project-members.service.ts`):
 
@@ -487,7 +504,7 @@ Regras adicionais (`project-members.service.ts`):
 - O `owner` não pode ter o papel alterado nem ser removido (403), e ninguém altera o próprio papel nem se remove do projeto (400).
 - Um `admin` que tenta agir sobre outro `admin` ou sobre o `owner`, ou atribuir `admin`, recebe 403.
 - Remover um membro **desatribui as tarefas dele** no projeto, na mesma transação.
-- `GET /users` (usado para achar quem adicionar) exige `email` ou `name` com **3 ou mais caracteres**: o diretório de usuários não pode ser listado inteiro.
+- `GET /users` (usado para achar quem adicionar) só responde a quem é `owner` ou `admin` de pelo menos um projeto (403 `Você não tem permissão para buscar usuários.` para os demais), exige `email` ou `name` com **3 ou mais caracteres** e devolve no máximo **10 por página**, só `id`, `name` e `email`: o diretório de usuários não pode ser varrido (D-028).
 
 ## 13. Segurança e observabilidade
 
@@ -497,12 +514,14 @@ Regras adicionais (`project-members.service.ts`):
 - **JWT** com segredo de pelo menos 32 caracteres (validado no boot) e validade curta; a estratégia confere a cada requisição se o usuário ainda existe e está ativo.
 - **Guard JWT global** (`APP_GUARD`): toda rota exige token, exceto as marcadas com `@Public()` (`auth/register`, `auth/login` e `health`). Um controller novo já nasce protegido.
 - **Rate limit por IP** (`@nestjs/throttler`): 100 requisições por minuto em todas as rotas (exceto `GET /health`), 10 por minuto em `POST /auth/login` e 5 por minuto em `POST /auth/register`. Acima disso, a API responde **429** com o header `Retry-After`. Valores configuráveis por variável de ambiente (`THROTTLE_*`).
-- **Validação de entrada rigorosa:** `whitelist` + `forbidNonWhitelisted` em todos os DTOs, limites de tamanho, UUID validado nos parâmetros de rota, datas `AAAA-MM-DD` válidas, `sortBy` restrito a uma lista de campos antes de chegar ao SQL.
+- **Validação de entrada rigorosa:** `whitelist` + `forbidNonWhitelisted` em todos os DTOs, **sem conversão implícita de tipos** (`{"title": 123}` é 400, não vira "123"), limites de tamanho (nome 120, e-mail 254, senha 6 a 72 também no login, antes do bcrypt), UUID validado nos parâmetros de rota, datas `AAAA-MM-DD` válidas, `sortBy` restrito a uma lista de campos antes de chegar ao SQL.
 - **SQL parametrizado** (QueryBuilder/TypeORM) e curingas do `LIKE` escapados: `%`, `_` e `\` digitados na busca são tratados como texto.
-- **Autorização por projeto** em todas as operações de tarefa e membro, sem IDOR, com regras estritas de papéis (seção 12).
-- **Diretório de usuários protegido:** `GET /users` exige 3 ou mais caracteres no e-mail ou no nome.
+- **Autorização por projeto** em todas as operações de tarefa e membro, sem IDOR, com regras estritas de papéis; projeto alheio responde 404 como um inexistente (seção 12).
+- **Diretório de usuários protegido:** `GET /users` só para quem gerencia membros em algum projeto, com 3 ou mais caracteres no e-mail ou no nome e no máximo 10 por página.
 - **CSV seguro:** a exportação neutraliza fórmulas (valores iniciados por `=`, `+`, `-`, `@`, tab ou CR ganham um apóstrofo na frente) e a importação desfaz o apóstrofo, então exportar e importar de volta preserva o texto. A importação aceita no máximo 5000 linhas e 5 MB e grava em lotes de 500 dentro de uma transação.
-- **helmet** (cabeçalhos de segurança) e **CORS** restrito às origens configuradas, sem `credentials` (a autenticação é por header `Authorization`, não por cookie).
+- **helmet** (cabeçalhos de segurança da API e do Swagger) e **CORS** restrito às origens configuradas, sem `credentials` (a autenticação é por header `Authorization`, não por cookie).
+- **nginx do frontend** (D-032): o HTML e os assets do SPA saem com `Content-Security-Policy` sem `unsafe-inline` (`default-src 'self'`, `frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` e `Cross-Origin-Opener-Policy`; `/api/` e `/docs` ficam só com os cabeçalhos do helmet (sem duplicar). O `index.html` vai com `Cache-Control: no-cache`, o build não publica source maps (`/assets/*.map` dá 404) e o nginx não anuncia a versão.
+- **`JWT_SECRET` fraco é avisado:** com o valor do `.env.example` (ou um segredo previsível) a API registra um `WARN` no boot pedindo um segredo próprio (`openssl rand -hex 32`).
 - **Banco:** `DATABASE_SSL` (`false`, `require`, `verify-full`) separado do `NODE_ENV`; violações de unicidade e de chave estrangeira em corrida viram 409 em vez de 500; criação de projeto (projeto + `owner`) e remoção de membro (+ desatribuição de tarefas) acontecem em transação.
 - **Swagger** pode ser desligado com `SWAGGER_ENABLED=false`; o **seed** recusa rodar em produção sem `SEED_ALLOW_PROD=true`.
 - **Containers sem root** (usuário `app` na imagem da API) e `.env` fora do git.
@@ -517,13 +536,13 @@ Regras adicionais (`project-members.service.ts`):
 - **Extrair módulos:** `tasks` e `reports` são os candidatos naturais a serviço próprio. Os módulos já se falam por serviços (`ProjectAccessService`, `TasksService`), o que facilita o corte.
 - **Refresh token** com rotação e revogação, caso a sessão precise durar mais que 1 hora sem novo login.
 - **Rate limit compartilhado** (Redis) para escalar a API em várias réplicas, e **cache** para relatórios pesados.
-- **Kanban paginado por coluna** (ou endpoint `GET /tasks/board` com N itens por coluna), em vez de carregar todas as páginas.
+- **Kanban paginado por coluna** (ou endpoint `GET /tasks/board` com N itens por coluna e a contagem real de cada status), em vez de carregar até 5.000 tarefas.
 - **Tipos gerados do OpenAPI** (`openapi-typescript` a partir de `/docs-json`) para eliminar a cópia manual dos DTOs no frontend.
 - **Fila de jobs** (BullMQ ou similar) para importações grandes: a API devolve um `jobId` e a interface acompanha o progresso.
 - **Transferência de propriedade** do projeto, em transação, e regra para nunca deixar um projeto sem `owner`.
 - **Notificações** (e-mail ou em tempo real) para atribuição e mudança de status.
 - **Observabilidade:** logs estruturados em JSON, métricas (Prometheus) e tracing (OpenTelemetry) reaproveitando o `requestId`.
-- **Testes de interface** (Vitest + Testing Library) e **E2E de navegador** (Playwright) no CI.
+- **Testes de componente** (Testing Library com jsdom) e **E2E de navegador** (Playwright) no CI, somando-se aos testes de lógica pura do frontend.
 
 ## 15. Pontos de melhoria e limitações conhecidas
 
@@ -535,24 +554,25 @@ Lista honesta do que ficou fora ou pode melhorar.
 - **Sem refresh token:** quando o token expira (1 h), a pessoa precisa entrar de novo; também não há revogação de token.
 - **Rate limit em memória:** não é compartilhado entre instâncias (para escalar, usar Redis). Com `TRUST_PROXY=1` (padrão do compose), a porta 3000 não deve ser publicada em produção.
 - **Importação de CSV síncrona:** limitada a 5 MB e 5000 linhas; arquivos maiores pedem uma fila.
-- **Exportar e importar de volta inverte a ordem relativa das tarefas:** a importação grava `created_at` crescente por linha (a última linha vira a mais nova) e a lista ordena do mais novo para o mais antigo (D-020).
+- **Busca com `unaccent` sem índice:** `unaccent(coluna) ILIKE '%termo%'` não usa índice btree (assim como o `ILIKE` anterior); com muito volume, um índice trigram resolveria (D-029).
+- **Limite da senha em caracteres, não em bytes:** o bcrypt considera 72 **bytes**; uma senha de até 72 caracteres com muitas letras acentuadas pode passar disso e ter o final ignorado (D-031).
+- **Importação só em UTF-8:** um CSV salvo em Latin-1/Windows-1252 é lido com os acentos errados.
 - **Migrations e seed fora da cobertura** de testes medida; são exercitados indiretamente (o e2e aplica as migrations reais).
 - **Sem métricas nem tracing**, só logs com `requestId`.
 
 **Frontend**
 
-- **O Kanban carrega todas as páginas de tarefas em série** (100 por requisição): com milhares de tarefas, o quadro demora a aparecer. Um endpoint de quadro por coluna resolveria.
-- **Sem testes automatizados nem lint no frontend** (só `tsc` estrito e build); sem E2E de navegador.
-- **Exclusões usam `window.confirm`**, fora do design system (falta um `ConfirmDialog`).
+- **O Kanban carrega até 5.000 tarefas em série** (50 páginas de 100): acima disso mostra as mais recentes e pede filtros; a contagem de cada coluna é a das tarefas carregadas. Um endpoint de quadro por coluna resolveria.
+- **Testes do frontend só de lógica pura** (Vitest em node): sem testes de componente nem E2E de navegador; as telas foram verificadas manualmente no navegador.
 - **Tipos copiados à mão dos DTOs** da API (o ideal é gerá-los do OpenAPI).
-- **Bundle único** (sem code-splitting por rota), **sourcemap publicado** no build de produção e `lucide-react` instalado sem uso.
-- **Lista e quadro de tarefas ainda divergem em detalhes:** a edição completa (título, responsável, prazo) só existe no quadro, e o filtro de prazo (`dueFrom`/`dueTo`) existe na API, mas não na tela.
+- **Bundle único** (sem code-splitting por rota).
+- **O filtro de prazo** (`dueFrom`/`dueTo`) existe na API, mas não na tela.
+- **A lista de projetos reserva a altura de 15 linhas** mesmo com poucos projetos: é proposital ("listagem com tamanho padrão", pedido do usuário), para a paginação não pular.
 - **Acessibilidade e performance** foram revisadas por leitura de código e build, sem teste com leitor de tela nem medição (Lighthouse).
 
 **Operação**
 
 - O compose é para desenvolvimento e avaliação: HTTP puro, banco no mesmo host e senha padrão `app`. Para produção, são necessários TLS, segredos fora do `.env`, backup do banco e `DATABASE_SSL`.
-- Não há `.gitattributes` na raiz (só em `backend/`), então o fim de linha depende da configuração de cada máquina.
 
 ## 16. Estrutura de pastas
 
@@ -570,7 +590,7 @@ Lista honesta do que ficou fora ou pode melhorar.
 │   │   │   ├── database/          # TypeORM, SSL e data-source da CLI de migrations
 │   │   │   └── throttle/          # rate limit
 │   │   ├── database/
-│   │   │   ├── migrations/        # 6 migrations (schema, enums, índices)
+│   │   │   ├── migrations/        # 7 migrations (schema, enums, índices, extensão unaccent)
 │   │   │   └── seeds/seed.ts      # dados de exemplo (idempotente)
 │   │   ├── modules/               # uma pasta por feature (feature-first)
 │   │   │   ├── auth/              # register, login, JWT
@@ -595,14 +615,15 @@ Lista honesta do que ficou fora ou pode melhorar.
 │   │   ├── features/              # auth, projects, tasks (lista e Kanban), reports, users
 │   │   ├── components/ui/         # design system (Button, Modal, DataTable, Toast…)
 │   │   ├── services/api/          # cliente axios, interceptors, barra de atividade
-│   │   ├── stores/                # Zustand: sessão e toasts
+│   │   ├── stores/                # Zustand: sessão, toasts e diálogo de confirmação
 │   │   └── hooks/ · utils/ · types/ · styles/
+│   │   # testes unitários ao lado do código: src/**/*.spec.ts (Vitest)
 │   └── DESIGN.md                  # regras e tokens do design system
-├── docker/                        # Dockerfiles (backend e frontend) e nginx.conf
+├── docker/                        # Dockerfiles (backend e frontend), nginx.conf e cabeçalhos de segurança do SPA
 ├── docker-compose.yml             # postgres + migrate + backend + frontend
 ├── .env.example                   # variáveis do compose
 ├── docs/
-│   ├── partitura.md               # registro das decisões técnicas (D-001 a D-026)
+│   ├── partitura.md               # registro das decisões técnicas (D-001 a D-034)
 │   ├── setup.md                   # guia de desenvolvimento local
 │   └── api/contrato-d011-d015.md  # contrato dos endpoints
 └── .github/workflows/ci.yml       # CI (GitHub Actions)
@@ -615,5 +636,5 @@ Lista honesta do que ficou fora ou pode melhorar.
 - **Mudou uma entidade?** Gere e revise a migration (`migration:generate`); nunca use `synchronize`.
 - **Mudou um endpoint?** Atualize os DTOs (o Swagger sai deles) e o [contrato](docs/api/contrato-d011-d015.md).
 - **Frontend:** use os componentes de `components/ui` e os tokens de `global.css`; regras em [`frontend/DESIGN.md`](frontend/DESIGN.md).
-- **Antes de abrir um PR**, rode `npm run lint`, `npm run build`, `npm run test` e `npm run test:e2e` no backend e `npm run build` (que inclui o `typecheck`) no frontend: é o que o CI executa.
-- **Fim de linha:** escreva em LF (hoje só `backend/.gitattributes` força isso).
+- **Antes de abrir um PR**, rode `npm run lint`, `npm run build`, `npm run test` e `npm run test:e2e` no backend e `npm run lint`, `npm run test` e `npm run build` (que inclui o `typecheck`) no frontend: é o que o CI executa.
+- **Fim de linha:** LF, forçado pelo `.gitattributes` da raiz (`* text=auto eol=lf`).

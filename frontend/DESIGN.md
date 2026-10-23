@@ -49,6 +49,7 @@ Use apenas os degraus `1, 2, 3, 4, 6, 8` do Tailwind (4, 8, 12, 16, 24, 32px) em
 |---|---|---|
 | `--spacing-row` | 56px | `h-row`, `min-h-row` (linha de tabela/lista; cabe um botao de 40px com 8px de folga) |
 | `--spacing-table-head` | 40px | `h-table-head` (cabecalho) |
+| `--spacing-kanban-column` | `100dvh - 12rem` | `max-h-kanban-column` (coluna do Kanban rola sozinha; 50 cartoes por vez com "Mostrar mais") |
 
 `DataTable` usa esses tokens para a altura de linha, cabecalho, esqueleto e altura minima da lista.
 
@@ -89,9 +90,11 @@ corpo e rodape usam `px-card`; rodape alinhado a direita com `gap-3` e botoes de
 | `Badge` | 24px de altura, `text-caption`, pilula |
 | `Card` | `p-card`, `rounded-surface`, titulo `text-heading` |
 | `Page` / `PageHeader` | raiz de pagina (`gap-6`) e cabecalho com titulo, descricao e acoes |
-| `Toolbar`, `SearchBox`, `FilterSelect`, `ClearFilters`, `ResultCount` | todos os controles com 40px; `FilterSelect` tem largura unica (`sm:w-56`) |
+| `Toolbar`, `SearchBox`, `FilterSelect`, `ClearFilters`, `ResultCount` | todos os controles com 40px; `FilterSelect` tem largura unica (`sm:w-56`). No `SearchBox`, a area da direita (`pr-field-action`, 96px) so e reservada quando aparece o selo `Enter` (busca pendente) ou o `Limpar`: com o campo vazio o placeholder usa a largura toda. A dica "Pressione Enter para buscar" fica no `title` do selo e no `aria-describedby`; `Limpar` devolve o foco ao campo |
 | `DataTable`, `Pagination` | linha 56px, cabecalho 40px; paginacao com os mesmos botoes de 40px |
-| `Modal`, `FormModal` | tamanhos `sm/md/lg`, rodape padrao |
+| `Modal`, `FormModal` | tamanhos `sm/md/lg`, rodape padrao; `role` `dialog` (padrao) ou `alertdialog`; foco inicial no elemento com `data-autofocus`; modais empilhados: so o do topo responde a Esc e Tab |
+| `ConfirmDialog` (`ConfirmDialogHost` no App) + `useConfirm()` | confirmacao de acao destrutiva no lugar do `window.confirm`: `alertdialog` `sm`, titulo ("Excluir projeto?"), descricao com o nome do item, Cancelar (foco inicial) + botao `danger` que roda a acao com `loading` (mesma largura); Esc e fundo cancelam |
+| `SkipLink` | "Pular para o conteudo", primeiro focavel dos layouts; fora da tela ate receber foco (so `translate`), leva o foco ao `<main id="conteudo">` |
 | `EmptyState`, `Skeleton` | `Skeleton` tem variantes (`line`, `control`, `row`, `stat`, `card`) derivadas dos tokens |
 | `AuthLayout` (`src/app`) | Login/Cadastro em tela inteira: painel de identidade (>= lg) + formulario fluido |
 
@@ -145,7 +148,9 @@ já nascem preenchidas. Toda animação nova precisa de uma regra nesse bloco.
 | `Toast` (`ToastProvider`, `useToast`, `stores/toastStore`) | toasts empilhados no canto; regiões `aria-live="polite"` (sucesso/info) e `"assertive"` (erro/aviso) sempre presentes; ~4s sucesso, ~7s erro; fechar; pausa no hover/foco; entrada e saída animadas; mesmo `id` substitui (erros de rede não empilham). `utils/notify.notifyError(err, título)` mostra a `message` em português da API (array vira lista curta) |
 | `Modal` | entrada **e saída**: todo pedido de fechar (Esc, fundo, X, `ModalCloseButton`, `closing`) toca a saída e só então chama `onClose` (o pai desmonta). `FormModal.onSubmit` devolve `true` para fechar com animação após salvar |
 | `DataTable` | esqueleto com shimmer; linhas entram com fade escalonado (`--row-index`); `rowState` (`saving`/`deleting`/`removing`) e `onRetry` ("Tentar novamente" no erro) |
-| `ui/ErrorState` | `Alert` + botão "Tentar novamente" |
+| `ui/ErrorState` | `Alert` + botão "Tentar novamente" (`onRetry`) e/ou uma ação própria (`action`, ex.: "Voltar para projetos") |
+| `features/projects/ProjectUnavailable` | esqueleto enquanto o projeto carrega; erro passageiro (rede, 5xx, 429) com "Tentar novamente" que recarrega projeto, papel e listas; 400/403/404 com "Projeto não encontrado ou você não tem acesso a ele." e "Voltar para projetos" |
+| `hooks/useDocumentTitle` | `<title>` por rota: `Projetos · Gestão de Projetos e Tarefas`, `Tarefas — <projeto> · …` |
 | `hooks/useRowStates` | estado por linha (`saving` select, `deleting` botão, `removing` animação de saída) |
 | `utils/motion` | `motionMs('fast'|'base'|'slow')` lê os tokens do CSS; `delay()` |
 
@@ -154,8 +159,9 @@ já nascem preenchidas. Toda animação nova precisa de uma regra nesse bloco.
 1. Ação que chama a API: `<Button loading loadingLabel="…">`; nunca esconda ou troque o rótulo por `…`.
 2. Resultado de ação: `useToast()` (sucesso) / `notifyError()` (erro). Erro de validação **dentro de modal** continua inline.
 3. Listagem: `DataTable` (já traz esqueleto, fade, erro com retry). PATCH/DELETE por linha: `useRowStates`.
-4. Modal: `Modal`/`FormModal`; botões de dentro que fecham usam `ModalCloseButton`.
-5. Nova animação: keyframe + `@utility` em `global.css` usando os tokens, **mais** a regra em `prefers-reduced-motion`.
+4. Modal: `Modal`/`FormModal`; botões de dentro que fecham usam `ModalCloseButton`. Exclusão: `useConfirm()` (nunca `window.confirm`).
+5. Tela de um projeto: renderize so depois de o projeto carregar (`ProjectUnavailable` antes) e chame `useDocumentTitle`.
+6. Nova animação: keyframe + `@utility` em `global.css` usando os tokens, **mais** a regra em `prefers-reduced-motion`.
 
 ### Como verificar
 
@@ -172,7 +178,7 @@ já nascem preenchidas. Toda animação nova precisa de uma regra nesse bloco.
 
 ## Como verificar
 
-1. `npm run typecheck` e `npm run build`.
+1. `npm run lint`, `npm run typecheck`, `npm run test` e `npm run build`.
 2. `rg '\b(h|px|py|text|rounded)-\[' src` nao deve retornar nada.
 3. No navegador, `getBoundingClientRect()` de qualquer `button`, `a` com aparencia de botao,
    `input` e `select` deve dar **40px** de altura (32px so no "Limpar" da busca).

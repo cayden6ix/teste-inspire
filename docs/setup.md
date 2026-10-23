@@ -119,9 +119,19 @@ docker exec api-postgres psql -U app -d postgres -c "CREATE DATABASE app_test"
 - A cada execução o setup **apaga e recria o schema `public` do banco de testes** e aplica as migrations reais; não guarde nada nesse banco.
 - Duas execuções e2e simultâneas no mesmo banco se serializam sozinhas (advisory lock).
 - Os e2e usam o próprio ambiente (definido em `test/setup/e2e-setup.ts`), não o `backend/.env`.
+- As buscas usam a extensão `unaccent` do Postgres (migration `1792681800006-EnableUnaccentExtension`). Ela faz parte do contrib e já vem nas imagens oficiais; num Postgres instalado à mão sem o contrib, a migration falha com `extension "unaccent" is not available`.
 - Erro `Teste abortado: o banco "..." nao termina em "_test"`: confira `TEST_DATABASE_URL`.
 
-O CI (`.github/workflows/ci.yml`) roda lint, tipos, build, unitários e e2e do backend (com um Postgres como service container), typecheck e build do frontend e o build das imagens Docker. Mais detalhes na [seção 8 do README](../README.md#8-testes-e-ci).
+O CI (`.github/workflows/ci.yml`) roda lint, tipos, build, unitários e e2e do backend (com um Postgres como service container), lint, typecheck, testes e build do frontend e o build das imagens Docker.
+
+No frontend (`frontend/`):
+
+```bash
+npm run lint        # oxlint (aviso também falha)
+npm run typecheck   # tsc nos dois tsconfigs
+npm run test        # Vitest (lógica pura, ambiente node; specs em src/**/*.spec.ts)
+npm run build       # typecheck + bundle de produção (sem source maps)
+``` Mais detalhes na [seção 8 do README](../README.md#8-testes-e-ci).
 
 ## 6. Scripts
 
@@ -145,6 +155,8 @@ O CI (`.github/workflows/ci.yml`) roda lint, tipos, build, unitários e e2e do b
 | `npm run dev` | Vite dev server (porta 5173) |
 | `npm run build` | `typecheck` + bundle de produção |
 | `npm run typecheck` | `tsc --noEmit` nos dois tsconfigs |
+| `npm run lint` | oxlint com `--deny-warnings` (`.oxlintrc.json`) |
+| `npm run test` / `test:watch` | Testes unitários (Vitest, ambiente node) |
 | `npm run preview` | Serve o build de produção localmente |
 
 ## 7. Problemas comuns no desenvolvimento

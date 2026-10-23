@@ -6,9 +6,9 @@
 Este documento registra as decisões técnicas do projeto, uma a uma.
 Formato de cada item: **Contexto / Decisão / Justificativa / Alternativas descartadas**.
 
-Status: **Vigente** - as decisões D-001 a D-026 refletem o estado atual do código. Última revisão: 2026-10-22. Decisões novas entram no fim, com o próximo número `D-0xx`. Quando uma decisão muda, o texto é reescrito e o que mudou fica registrado na própria decisão (campo **Histórico**).
+Status: **Vigente** - as decisões D-001 a D-034 refletem o estado atual do código. Última revisão: 2026-10-23. Decisões novas entram no fim, com o próximo número `D-0xx`. Quando uma decisão muda, o texto é reescrito e o que mudou fica registrado na própria decisão (campo **Histórico**).
 
-Índice: [D-001](#d-001---arquitetura-monolito-modular-em-camadas) · [D-002](#d-002---banco-de-dados-postgresql-com-migrations) · [D-003](#d-003---frontend-react--typescript-com-vite) · [D-004](#d-004---entrega-com-docker) · [D-005](#d-005---autenticação) · [D-006](#d-006---orm-typeorm) · [D-007](#d-007---gerenciador-de-estado-no-frontend) · [D-008](#d-008---estratégia-de-testes) · [D-009](#d-009---estilização-do-frontend) · [D-010](#d-010---servidor-de-desenvolvimento-do-frontend) · [D-011](#d-011---tarefas-por-projeto) · [D-012](#d-012---status-das-tarefas) · [D-013](#d-013---membros-de-projeto) · [D-014](#d-014---exportaçãoimportação) · [D-015](#d-015---relatórios) · [D-016](#d-016---enums-nativos-do-postgres) · [D-017](#d-017---índices-escolhidos) · [D-018](#d-018---migrations-por-passo-manual-e-cli-sobre-o-dist) · [D-019](#d-019---busca-de-tarefas-no-servidor-só-ao-apertar-enter) · [D-020](#d-020---ordenação-padrão-e-desempate) · [D-021](#d-021---paginação-em-envelope-data-meta) · [D-022](#d-022---erros-padronizados-em-pt-br) · [D-023](#d-023---design-system-do-frontend) · [D-024](#d-024---papéis-e-matriz-de-autorização) · [D-025](#d-025---rate-limit-e-endurecimento-de-segurança) · [D-026](#d-026---serviço-migrate-one-shot-no-compose)
+Índice: [D-001](#d-001---arquitetura-monolito-modular-em-camadas) · [D-002](#d-002---banco-de-dados-postgresql-com-migrations) · [D-003](#d-003---frontend-react--typescript-com-vite) · [D-004](#d-004---entrega-com-docker) · [D-005](#d-005---autenticação) · [D-006](#d-006---orm-typeorm) · [D-007](#d-007---gerenciador-de-estado-no-frontend) · [D-008](#d-008---estratégia-de-testes) · [D-009](#d-009---estilização-do-frontend) · [D-010](#d-010---servidor-de-desenvolvimento-do-frontend) · [D-011](#d-011---tarefas-por-projeto) · [D-012](#d-012---status-das-tarefas) · [D-013](#d-013---membros-de-projeto) · [D-014](#d-014---exportaçãoimportação) · [D-015](#d-015---relatórios) · [D-016](#d-016---enums-nativos-do-postgres) · [D-017](#d-017---índices-escolhidos) · [D-018](#d-018---migrations-por-passo-manual-e-cli-sobre-o-dist) · [D-019](#d-019---busca-de-tarefas-no-servidor-só-ao-apertar-enter) · [D-020](#d-020---ordenação-padrão-e-desempate) · [D-021](#d-021---paginação-em-envelope-data-meta) · [D-022](#d-022---erros-padronizados-em-pt-br) · [D-023](#d-023---design-system-do-frontend) · [D-024](#d-024---papéis-e-matriz-de-autorização) · [D-025](#d-025---rate-limit-e-endurecimento-de-segurança) · [D-026](#d-026---serviço-migrate-one-shot-no-compose) · [D-027](#d-027---quem-não-é-membro-recebe-404) · [D-028](#d-028---busca-de-usuários-restrita-a-quem-gerencia-membros) · [D-029](#d-029---busca-sem-diferenciar-acentos-unaccent) · [D-030](#d-030---csv-com-bom-validação-do-arquivo-e-status-flexível) · [D-031](#d-031---entrada-sem-conversão-implícita-limites-da-conta-e-aviso-de-jwt_secret) · [D-032](#d-032---cabeçalhos-de-segurança-e-cache-no-nginx-sem-source-maps) · [D-033](#d-033---robustez-da-interface-estado-do-projeto-confirmação-e-quadro-com-teto) · [D-034](#d-034---lint-e-testes-do-frontend)
 
 ---
 
@@ -110,7 +110,7 @@ Frontend React: `features/<feature>/` + `components/ui` + `services/api` + `stor
 
 **Contexto:** A interface precisa de estado de sessão global e de dados de servidor (listas paginadas, detalhes).
 
-**Decisão:** Zustand para o estado global de sessão (token, persistido em `localStorage`) e para os toasts. Dados de servidor via axios + hooks próprios por feature (`useProjects`, `useTasks`, `useMembers`...). **Não há cache de dados de servidor**: cada montagem de tela refaz a requisição. Os hooks paginados descartam respostas antigas (guardam um `requestId`) para evitar que uma resposta tardia sobrescreva a mais recente.
+**Decisão:** Zustand para o estado global de sessão (token, persistido em `localStorage`) e para os toasts. Dados de servidor via axios + hooks próprios por feature (`useProjects`, `useTasks`, `useMembers`...). **Não há cache de dados de servidor**: cada montagem de tela refaz a requisição. Os hooks paginados descartam respostas antigas (guardam um `requestId`) para evitar que uma resposta tardia sobrescreva a mais recente. O efeito que dispara a busca liga o estado de carregamento de forma síncrona; a regra `react/set-state-in-effect` do oxlint é desligada **só nessas linhas**, com o motivo no comentário (D-034).
 
 **Justificativa:** Zustand é mínimo (1 dependência, ~1kB), sem boilerplate de providers e com tipagem forte, compatível com a disciplina de TS estrito. Evita a dependência de uma lib de cache de queries que o escopo não exige. O custo conhecido é refazer requisições ao navegar; para o volume do desafio isso é aceitável, e a migração para TanStack Query continua possível (README, seção 14).
 
@@ -128,9 +128,10 @@ Frontend React: `features/<feature>/` + `components/ui` + `services/api` + `stor
 **Decisão:** Duas camadas de teste no backend, ambas com **Vitest** e **SWC** (`unplugin-swc`, para emitir os metadados de decorators de que a injeção de dependência do Nest precisa; o transformador padrão do Vite não os emite):
 - **Unitários** (`npm run test`; `src/**/*.spec.ts` ao lado do código e `test/**/*.spec.ts`): services, DTOs e utilitários isolados, **sem banco**, com repositórios substituídos por mocks (`@nestjs/testing`). Cobrem regras de papel, importação de CSV, filtro de exceções, validação de ambiente, paginação, escape de `LIKE` e o seed. Cobertura medida com `npm run test:cov`.
 - **End-to-end** (`npm run test:e2e`; `test/e2e/*.e2e-spec.ts`): aplicação Nest completa (montada pela mesma `configureApp` do servidor real) com `supertest` contra um **PostgreSQL real em banco separado, `app_test`**. A cada execução o setup recria o schema `public` desse banco e aplica as **migrations reais**. Uma guarda recusa qualquer banco cujo nome não termine em `_test`, e um *advisory lock* serializa execuções simultâneas. Cobrem cadastro e login, 401 sem token, IDOR entre projetos, matriz de papéis, paginação, CSV de ponta a ponta, relatórios, rate limit e o Swagger. Cobertura com `npm run test:e2e:cov`.
-- **CI** (`.github/workflows/ci.yml`): o Postgres é um *service container* do GitHub Actions (banco `app_test`); o job roda lint, `tsc`, build, `test:cov` e `test:e2e`.
+- **Frontend** (`npm run test` em `frontend/`; `src/**/*.spec.ts`): **Vitest** em ambiente node, só lógica pura: matriz de papéis (`assignableRoles`, `canManageMember`), mensagens de erro (`errorList`, `isRetryableError`, 401/403/409/429/rede), JWT, formatação (datas, números, `<1%`), destino depois do login, título da aba, store do diálogo de confirmação, sessão, montagem das colunas do quadro e o teto de carga do quadro (D-033, D-034).
+- **CI** (`.github/workflows/ci.yml`): o Postgres é um *service container* do GitHub Actions (banco `app_test`); o job do backend roda lint, `tsc`, build, `test:cov` e `test:e2e`; o do frontend roda lint, typecheck, `test` e build.
 
-No momento desta revisão são 686 testes (382 unitários e 304 e2e); a cobertura de instruções é de cerca de 78% nos unitários e 92% nos e2e (migrations e seed ficam fora da conta).
+No momento desta revisão são 786 testes no backend (439 unitários e 347 e2e) e 95 no frontend; a cobertura de instruções do backend é de cerca de 78% nos unitários e 95% nos e2e (migrations e seed ficam fora da conta).
 
 **Justificativa:** Mocks dão testes rápidos das regras de negócio sem banco. O e2e com Postgres real cobre o que mock não cobre: constraints, enums nativos, SQL de paginação/ordenação e a integração guard + pipe + filtro. Um banco separado garante que os testes nunca toquem os dados de desenvolvimento. Usar um Postgres real (e não SQLite em memória) evita divergência de comportamento com a produção.
 
@@ -139,7 +140,7 @@ No momento desta revisão são 686 testes (382 unitários e 304 e2e); a cobertur
 - *Só testes e2e*: lentos para cobrir todas as combinações de regra.
 - *Só testes unitários com mocks*: não pegam erros de SQL, de migration ou de configuração do Nest.
 - *Jest*: o template do Nest 12 já usa Vitest; manter uma só ferramenta.
-- *Testes de frontend*: fora do escopo desta entrega (README, seção 15).
+- *Testes de componente com jsdom/Testing Library e E2E de navegador (Playwright)*: ficaram como evolução (README, seção 14); a primeira camada de testes do frontend cobre a lógica pura, sem DOM.
 
 ---
 
@@ -218,12 +219,15 @@ No momento desta revisão são 686 testes (382 unitários e 304 e2e); a cobertur
 **Contexto:** O desafio pede exportar todas as tarefas e importar tarefas em massa.
 
 **Decisão:** CSV, por projeto, com as colunas `titulo,descricao,status,responsavel_email,data_limite` (data em `YYYY-MM-DD`).
-- **Exportação** (`GET /api/projects/:projectId/tasks/export`): não paginada, na mesma ordem da lista (`createdAt desc`, D-020), disponível para qualquer membro.
+- **Exportação** (`GET /api/projects/:projectId/tasks/export`): não paginada, em ordem **cronológica** (`createdAt asc`, `id asc`, D-020), em UTF-8 **com BOM** (D-030), disponível para qualquer membro.
 - **Importação** (`POST /api/projects/:projectId/tasks/import`): `multipart/form-data` no campo `file` (um arquivo, até 5 MB) ou CSV puro no corpo (`text/csv`); exige papel que escreve tarefas. Linhas válidas são importadas e linhas inválidas **não interrompem** a importação: voltam em `errors[]` com o número da linha (1 = cabeçalho) e a mensagem. A resposta é `{created, errors}`. O responsável é identificado pelo e-mail e precisa ser membro do projeto.
 
 - **Limites e gravação:** até 5 MB e **5000 linhas de dados** (acima disso, 400 e nada é importado); título com até 200 caracteres, descrição com até 4000 e data `AAAA-MM-DD` válida. Os responsáveis são resolvidos com os membros do projeto carregados de uma vez, e as linhas válidas são inseridas **em lotes de 500, em uma única transação**: ou todas as válidas entram, ou nenhuma.
 - **Proteção contra fórmulas (CSV/Formula Injection):** na exportação, valor de texto que começa com `=`, `+`, `-`, `@`, tab ou CR (mesmo precedido de apóstrofos) sai com um apóstrofo na frente, e a planilha mostra o texto em vez de executá-lo. Na importação, o apóstrofo inicial é removido, então exportar e importar de volta preserva o texto.
-- **Consequência conhecida:** a importação grava `created_at` crescente por linha (D-020). Como a lista ordena do mais novo para o mais antigo, exportar e importar de volta **inverte a ordem relativa** das tarefas. Está registrado como ponto de melhoria.
+- **Validação do arquivo (D-030):** cabeçalho sem a coluna `titulo`, arquivo que não é CSV (byte nulo, JSON, aspas quebradas) ou sem nenhuma linha de dados respondem 400, antes de importar qualquer linha. Os nomes das colunas e o status aceitam variações de escrita (`Título`, `Em Andamento`, `Concluída`).
+- **Ordem preservada:** a importação grava `created_at` crescente por linha (D-020) e a exportação sai em ordem cronológica, então exportar e importar de volta preserva a ordem relativa das tarefas (a última linha é a mais nova).
+
+**Histórico:** até 2026-10-22 a exportação saía na ordem da lista (mais nova primeiro) e, combinada com o `created_at` crescente da importação, exportar e importar de volta invertia a ordem relativa. A exportação passou a ser cronológica (D-030).
 
 **Justificativa:** CSV é o formato universal de planilha, simples de gerar, de revisar e de testar. Importar o que for válido e devolver as linhas com erro é mais útil para quem importa do que rejeitar o arquivo inteiro por uma linha ruim. Identificar o responsável pelo e-mail permite que o arquivo exportado seja reimportado em outro projeto.
 
@@ -298,7 +302,7 @@ No momento desta revisão são 686 testes (382 unitários e 304 e2e); a cobertur
 
 **Contexto:** A tela de tarefas tem um campo de busca. Filtrar no cliente exigiria carregar todas as tarefas do projeto; buscar no servidor a cada tecla geraria uma requisição por caractere digitado, e o servidor faria `ILIKE` em título e descrição a cada uma.
 
-**Decisão:** A busca é executada **no servidor** (`search` em `GET /api/projects/:projectId/tasks`, `ILIKE` em título e descrição) e só dispara quando a pessoa **aperta Enter** (a interface mostra a dica "Pressione Enter para buscar"); o botão Limpar zera o filtro. A regra é **uniforme**: a lista (`TasksPage`) e o quadro Kanban (`TaskBoardPage`) buscam da mesma forma, por título e descrição. Decisão do usuário, para evitar gargalo no servidor.
+**Decisão:** A busca é executada **no servidor** (`search` em `GET /api/projects/:projectId/tasks`, `unaccent(coluna) ILIKE unaccent(termo)` em título e descrição: sem diferenciar maiúsculas nem acentos, D-029) e só dispara quando a pessoa **aperta Enter** (a interface mostra um selo "Enter" dentro do campo, com a dica "Pressione Enter para buscar" no `title` e para leitores de tela); o botão Limpar zera o filtro. A regra é **uniforme**: a lista (`TasksPage`) e o quadro Kanban (`TaskBoardPage`) buscam da mesma forma, por título e descrição. Decisão do usuário, para evitar gargalo no servidor.
 
 **Justificativa:** Mantém a paginação correta (o total e as páginas refletem o filtro), evita baixar o projeto inteiro no cliente e elimina o tráfego de uma requisição por tecla. O custo é a busca não ser "ao vivo".
 
@@ -312,9 +316,11 @@ No momento desta revisão são 686 testes (382 unitários e 304 e2e); a cobertur
 
 **Contexto:** Com paginação por `OFFSET`, registros com o mesmo valor na chave de ordenação (por exemplo, o mesmo `created_at` em uma importação) podem repetir ou sumir entre páginas se a ordem não for total.
 
-**Decisão:** Toda listagem paginada tem **desempate final por `id`**, na mesma direção da ordenação (ex.: `ORDER BY created_at DESC, id DESC`). Padrões: tarefas `createdAt desc` (mais novas primeiro), projetos `name asc`, usuários `name asc`, membros pelo nome do usuário `asc`. O `sortBy` só aceita campos de uma lista permitida por endpoint. Na importação de CSV, cada tarefa recebe `created_at` explícito e crescente por linha, de modo que a última linha do arquivo é a mais nova.
+**Decisão:** Toda listagem paginada tem **desempate final por `id`**, na mesma direção da ordenação (ex.: `ORDER BY created_at DESC, id DESC`). Padrões: tarefas `createdAt desc` (mais novas primeiro), projetos `name asc`, usuários `name asc`, membros pelo nome do usuário `asc`. O `sortBy` só aceita campos de uma lista permitida por endpoint. Na importação de CSV, cada tarefa recebe `created_at` explícito e crescente por linha, de modo que a última linha do arquivo é a mais nova. A **exportação** CSV sai em ordem **cronológica** (`createdAt asc, id asc`): reimportar o arquivo preserva a ordem relativa. A **lista** continua do mais novo para o mais antigo.
 
-**Justificativa:** Ordem total garante que a paginação seja estável e a exportação seja idêntica entre execuções. Gravar `created_at` crescente na importação preserva a ordem do arquivo mesmo quando as linhas são salvas no mesmo instante. O índice de D-017 cobre essa ordenação.
+**Justificativa:** Ordem total garante que a paginação seja estável e a exportação seja idêntica entre execuções. Gravar `created_at` crescente na importação preserva a ordem do arquivo mesmo quando as linhas são salvas no mesmo instante; exportar em ordem cronológica fecha o ciclo exportar -> importar sem inverter nada. O índice de D-017 cobre as duas direções (leitura reversa do btree).
+
+**Histórico:** a exportação seguia a ordem da lista (`createdAt desc`) e o ciclo exportar -> importar invertia a ordem relativa; passou a ser cronológica em 2026-10-23 (D-030).
 
 **Alternativas descartadas:**
 - *Ordenar só por `created_at`*: paginação instável quando há empates.
@@ -370,7 +376,7 @@ No momento desta revisão são 686 testes (382 unitários e 304 e2e); a cobertur
 
 **Contexto:** D-013 define os papéis. Faltava a regra completa e o lugar onde ela é aplicada.
 
-**Decisão:** A autorização é decidida **no service**, por `ProjectAccessService.requireRole(projectId, userId, papéisPermitidos)`: projeto inexistente é 404, quem não é membro recebe 403 (`Você não faz parte deste projeto.`) e quem é membro sem o papel recebe 403 (`Seu papel no projeto não permite esta ação.`). Ordem: `owner` > `admin` > `member` > `viewer`.
+**Decisão:** A autorização é decidida **no service**, por `ProjectAccessService.requireRole(projectId, userId, papéisPermitidos)`: projeto inexistente **e** projeto do qual a pessoa não é membro respondem o mesmo 404 (`Projeto não encontrado.`, D-027) e quem é membro sem o papel recebe 403 (`Seu papel no projeto não permite esta ação.`). Ordem: `owner` > `admin` > `member` > `viewer`.
 
 | Ação | owner | admin | member | viewer |
 | --- | :---: | :---: | :---: | :---: |
@@ -389,7 +395,7 @@ Regras de membros (`project-members.service.ts`):
 - As mensagens da API usam os termos da interface (proprietário, administrador, membro, visualizador); os valores do enum continuam `owner|admin|member|viewer`.
 - O frontend espelha essas regras (papel do `owner` não editável, `admin` só oferece `member`/`viewer`), mas a regra de verdade é a do backend.
 
-**Histórico:** a primeira versão deixava um `admin` rebaixar ou remover outro `admin` e o `owner` rebaixar a si mesmo (o projeto podia ficar sem dono), e o contrato e o código se contradiziam. As regras acima fecharam essas brechas e estão cobertas por testes unitários e e2e.
+**Histórico:** quem não era membro recebia 403 (`Você não faz parte deste projeto.`), o que distinguia um projeto existente de um inexistente; passou a 404 em 2026-10-23 (D-027). A primeira versão deixava um `admin` rebaixar ou remover outro `admin` e o `owner` rebaixar a si mesmo (o projeto podia ficar sem dono), e o contrato e o código se contradiziam. As regras acima fecharam essas brechas e estão cobertas por testes unitários e e2e.
 
 **Justificativa:** Concentrar a regra em um serviço e filtrar toda busca por `projectId` + `id` evita IDOR e impede que um controller esqueça a checagem. Manter a hierarquia simples (quatro papéis) deixa a matriz verificável por testes.
 
@@ -409,7 +415,7 @@ Regras de membros (`project-members.service.ts`):
 - **SSL do banco** controlado por `DATABASE_SSL` (`false`, `require`, `verify-full`), desacoplado do `NODE_ENV`; a imagem de produção roda com `NODE_ENV=production`.
 - **Swagger** controlado por `SWAGGER_ENABLED` (padrão `true`); **CORS** sem `credentials` (a autenticação é por header); `x-request-id` do cliente só é aceito se casar `/^[\w-]{1,64}$/`.
 - **Seed** recusa rodar com `NODE_ENV=production` sem `SEED_ALLOW_PROD=true`.
-- **Diretório de usuários:** `GET /users` exige `email` ou `name` com 3 ou mais caracteres.
+- **Diretório de usuários:** `GET /users` exige `email` ou `name` com 3 ou mais caracteres; desde D-028, só para quem é `owner` ou `admin` de algum projeto e com no máximo 10 itens por página.
 - **CSV:** neutralização de fórmulas e limite de 5000 linhas (D-014); **login** compara a senha mesmo para e-mail inexistente (hash falso), para não vazar por tempo de resposta quais e-mails existem.
 - **Erros de banco** em corrida (23505, 23503, 22P02) viram 409/409/400 em vez de 500; criação de projeto e remoção de membro rodam em transação.
 
@@ -437,3 +443,144 @@ Regras de membros (`project-members.service.ts`):
 - *`migrationsRun: true` na API*: contraria D-018.
 - *Entrypoint do backend rodando `migration:run` antes de `node dist/main.js`*: duas réplicas migrariam ao mesmo tempo, e uma falha de migration reiniciaria o container em loop (avaliada na época).
 - *Manter o passo manual no Docker*: primeira impressão ruim, API quebrada logo após o `up`.
+
+---
+
+## D-027 - Quem não é membro recebe 404
+
+**Contexto:** O QA (PRJ-20) mostrou que um id de projeto alheio respondia 403 (`Você não faz parte deste projeto.`) e um id inexistente respondia 404: a diferença confirmava que o projeto existe. O UUID v4 dificulta adivinhar ids, mas um id vazado (log, link, print) bastava para saber que ele é válido.
+
+**Decisão:** Em **todos** os endpoints de um projeto (`GET/PATCH/DELETE /projects/:projectId`, membros, tarefas, exportação e importação de CSV e `GET /reports?projectId=`), quem não é membro recebe a mesma resposta de um id inexistente: **404 `Projeto não encontrado.`**. Quem é membro, mas não tem o papel necessário, continua recebendo **403 `Seu papel no projeto não permite esta ação.`**. A regra mora em `ProjectAccessService.requireRole`, que agora faz **uma única consulta** (o vínculo em `project_members`: se ele existe, o projeto existe, por causa da FK com cascade). O `ProjectsService` checa o acesso **antes** de carregar o projeto. No frontend, 400/403/404 de projeto mostram `Projeto não encontrado ou você não tem acesso a ele.` com o botão **Voltar para projetos** (sem "Tentar novamente", que não resolveria).
+
+**Justificativa:** Não confirmar a existência de recursos alheios é a prática recomendada contra enumeração (OWASP); o 403 continua útil para o membro, que sabe que o projeto existe e precisa saber por que a ação foi negada. A validação do arquivo de importação também roda só depois do acesso: um não-membro não aprende nada sobre o arquivo nem sobre o projeto.
+
+**Alternativas descartadas:**
+- *Manter o 403 para não-membro*: mensagem mais explícita, mas permite enumerar ids válidos.
+- *404 também para o membro sem papel*: esconderia de quem já vê o projeto o motivo da recusa.
+
+---
+
+## D-028 - Busca de usuários restrita a quem gerencia membros
+
+**Contexto:** `GET /users` (MEM-15) servia a qualquer pessoa autenticada e devolvia até 100 usuários por página: com termos de 3 letras dava para varrer o diretório de e-mails.
+
+**Decisão:** A busca continua exigindo 3+ caracteres em `email` ou `name`, e passa a:
+- exigir que quem busca seja `owner` ou `admin` de **pelo menos um projeto** (é para isso que a busca existe: adicionar membros). Os demais recebem **403 `Você não tem permissão para buscar usuários.`**, checado antes do termo;
+- aceitar no máximo **10 itens por página** (`limit` padrão e máximo 10; `limit=11` é 400 `O campo "Limite" deve ser menor ou igual a 10.`);
+- devolver só `id`, `name` e `email`, como antes.
+
+O endpoint passou do `UsersModule` para o `ProjectsModule` (`UserSearchController`, rota `GET /users` inalterada) e a regra fica em `ProjectMembersService.searchUsers`: a permissão depende dos vínculos de projeto, e o `ProjectsModule` já depende do `UsersModule`; o caminho inverso criaria dependência circular. O modal "Adicionar membro" pede 10 por vez e avisa quando há mais resultados ("Digite mais do e-mail para refinar a busca").
+
+**Justificativa:** Reduz a superfície de enumeração ao mínimo que o caso de uso exige (quem pode convidar), sem mudar o contrato da resposta nem o fluxo de quem administra projetos.
+
+**Alternativas descartadas:**
+- *Buscar só por e-mail completo*: impede a enumeração, mas piora o fluxo de convite (avaliada).
+- *Guard no `UsersController` com `forwardRef` entre os módulos*: dependência circular entre módulos para uma regra que pertence a membros.
+
+---
+
+## D-029 - Busca sem diferenciar acentos (unaccent)
+
+**Contexto:** As buscas usavam `ILIKE`, que só ignora maiúsculas: `descricao` não encontrava `Descrição` (TAR-10), o que em português é a regra, não a exceção.
+
+**Decisão:** Uma migration nova, `1792681800006-EnableUnaccentExtension`, habilita a extensão **`unaccent`** do PostgreSQL (`CREATE EXTENSION IF NOT EXISTS unaccent`; `down`: `DROP EXTENSION IF EXISTS unaccent`). As buscas de projetos (nome e descrição), tarefas (título e descrição) e usuários (nome e e-mail) comparam `unaccent(coluna) ILIKE unaccent(:termo)`, mantendo o escape de `%`, `_` e `\` (o termo continua literal). A extensão faz parte do contrib oficial e vem nas imagens `postgres:17-alpine` do compose e do CI; é "trusted", então não exige superusuário. O setup dos e2e aplica as migrations de `src`, então os testes rodam com a extensão.
+
+**Justificativa:** Resolve o caso no banco, para todas as buscas, sem duplicar colunas. O custo conhecido é que `unaccent(coluna)` não usa índice btree; as buscas já eram `ILIKE '%termo%'` (que também não usa), sempre filtradas por projeto ou por usuário e paginadas.
+
+**Alternativas descartadas:**
+- *Colunas normalizadas (sem acento) gravadas pela aplicação*: duplica dados e exige migração de dados e manutenção em toda escrita.
+- *Índice trigram (`pg_trgm`) com `unaccent` imutável*: o volume do desafio não justifica; fica como evolução se a busca pesar.
+- *Normalizar no frontend*: não resolve, o texto acentuado está no banco.
+
+---
+
+## D-030 - CSV com BOM, validação do arquivo e status flexível
+
+**Contexto:** O QA apontou que um PNG, um JSON ou um texto qualquer viravam "título obrigatório" por linha ou "0 tarefa(s) importada(s)" sem explicação (CSV-05), que `Em Andamento` era recusado sem dizer os valores aceitos (CSV-11), que o Excel em português mostrava os acentos errados (TRV-26) e que exportar e importar de volta invertia a ordem (D-014, D-020).
+
+**Decisão:**
+- **Exportação em UTF-8 com BOM** (`EF BB BF` no início) e em **ordem cronológica** (`createdAt asc, id asc`). O frontend baixa o arquivo como `Blob` (lido como texto, o navegador descartaria o BOM).
+- **Validação do arquivo**, depois da checagem de acesso e antes de qualquer gravação: byte nulo, conteúdo que começa com `{` ou `[` (JSON) ou aspas quebradas -> 400 `O arquivo enviado não parece ser um CSV válido.`; cabeçalho sem a coluna `titulo` -> 400 `Cabeçalho inválido: o CSV precisa ter a coluna "titulo" (colunas aceitas: titulo, descricao, status, responsavel_email, data_limite).`; nenhuma linha depois do cabeçalho -> 400 `O arquivo enviado não parece ser um CSV válido: não há nenhuma linha de tarefa depois do cabeçalho.`.
+- **Nomes de coluna e status normalizados** (sem espaços nas bordas, minúsculas, sem acento, espaço/hífen viram `_`): `Título`, `Data limite`, `Em Andamento`, ` PENDENTE `, `Concluída` são aceitos. Colunas desconhecidas são ignoradas. Status ainda inválido vira erro da linha com a lista: `Status inválido: "xyz". Use: pendente, em_andamento ou concluida.`.
+- A importação aceita o arquivo com ou sem BOM, por multipart (o frontend envia o próprio arquivo, sem relê-lo como texto) ou `text/csv`.
+- No modal de importação, os 400 aparecem no próprio modal e "todas as linhas com erro" mostra `Nenhuma tarefa foi importada: …` com a lista de linhas.
+
+**Justificativa:** Erro de formato é do arquivo inteiro, não de cada linha; dizer o motivo uma vez é mais útil. O BOM é o que o Excel usa para detectar UTF-8, e os importadores que não o esperam (inclusive o nosso, por `csv-parse`) o tratam. Aceitar variações de escrita do status evita retrabalho com planilhas preenchidas à mão.
+
+**Alternativas descartadas:**
+- *Detectar a codificação (Latin-1/Windows-1252)*: exigiria heurística ou dependência; o formato aceito continua sendo UTF-8.
+- *Avisos de colunas ignoradas na resposta*: mudaria o contrato `{created, errors}` por pouco ganho (as colunas aceitas estão na mensagem de cabeçalho inválido).
+- *Exportar sem BOM e documentar "abra pelo assistente de importação do Excel"*: transfere o problema para quem usa.
+
+---
+
+## D-031 - Entrada sem conversão implícita, limites da conta e aviso de JWT_SECRET
+
+**Contexto:** `POST /tasks` com `{"title": 123}` criava a tarefa "123" (API-03): o `ValidationPipe` usava `enableImplicitConversion`, que converte o corpo pelo tipo declarado antes de validar. O cadastro aceitava nome e senha de 500 caracteres (API-04); como o bcrypt só considera os primeiros 72 bytes, uma senha maior era truncada em silêncio, e textos enormes viravam custo de hash no login. E a API subia com o `JWT_SECRET` público do `.env.example` sem avisar (TRV-20).
+
+**Decisão:**
+- O `ValidationPipe` global é criado em um lugar só (`createValidationPipe`, usado pelo `configureApp` e pelos testes) com **`enableImplicitConversion: false`**: número ou booleano no corpo cai no `@IsString` (`O campo "Título" deve ser um texto.`). A query string, que sempre chega como texto, declara a conversão onde precisa (`@Type(() => Number)` em `page` e `limit`).
+- Limites: nome até **120**, e-mail até **254**, senha de **6 a 72** caracteres no cadastro; no login, e-mail até 254 e senha até 72 (o 400 vem antes do bcrypt). O frontend aplica os mesmos `maxLength`. Projeto (nome 120, descrição 2000) e tarefa (título 200, descrição 4000) já tinham limites e foram mantidos.
+- **Aviso no boot** (`config/env/jwt-secret.check.ts`, chamado no `main.ts`): se o `JWT_SECRET` contém o trecho do exemplo (`troque-este-valor`) ou outros marcadores de exemplo (`changeme`, `secret`, `segredo`) ou tem menos de 10 caracteres distintos, a API registra um `WARN` pedindo um segredo próprio (`openssl rand -hex 32`). Não impede a subida.
+
+**Justificativa:** Conversão implícita esconde erros de quem integra e grava dados que ninguém enviou; o tipo errado deve ser 400. Os limites da conta fecham o truncamento silencioso do bcrypt (em caracteres; um texto com letras acentuadas ocupa mais bytes, então senhas acentuadas perto de 72 caracteres ainda podem passar de 72 bytes, limitação registrada no README) e um vetor barato de negação de serviço. Recusar o segredo de exemplo quebraria o `cp .env.example .env && docker compose up -d --build` prometido para avaliação local; o aviso deixa o risco visível sem quebrar esse fluxo.
+
+**Alternativas descartadas:**
+- *`@Type(() => String)` / transformações por campo*: continua convertendo em silêncio.
+- *Recusar o segredo de exemplo no boot*: quebra a subida em um comando (decisão do maestro).
+- *Limite da senha em bytes*: mensagem difícil de entender para quem cadastra; o limite em caracteres resolve o caso comum.
+
+---
+
+## D-032 - Cabeçalhos de segurança e cache no nginx, sem source maps
+
+**Contexto:** A API e o Swagger já tinham os cabeçalhos do helmet, mas o HTML e os assets do SPA, servidos pelo nginx do frontend, não tinham nenhum (TRV-17); o build publicava os `.map` com o código-fonte (TRV-19); e, sem `Cache-Control`, o navegador podia reaproveitar um `index.html` antigo depois de um deploy (visto na verificação: o portal abriu o bundle anterior).
+
+**Decisão:**
+- `docker/nginx-security-headers.conf`, incluído **só** nas locations do SPA (`/` e `/assets/`), com `always`: `Content-Security-Policy` (`default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (câmera, microfone, geolocalização, pagamento e USB desligados) e `Cross-Origin-Opener-Policy: same-origin`. As rotas com proxy (`/api/`, `/docs`) não têm `add_header`: ficam só os cabeçalhos do helmet, sem duplicar (o Swagger UI precisa da CSP do helmet).
+- `index.html` com `Cache-Control: no-cache` (revalida a cada visita); assets com hash continuam `public, immutable` por 1 ano. `server_tokens off`.
+- `vite.config.ts` com `sourcemap: false`: `/assets/*.js.map` responde 404.
+
+**Justificativa:** A CSP sem `unsafe-inline` é possível porque o build do Vite só gera `<script type="module" src>` e `<link rel="stylesheet">`, e os estilos dinâmicos do React passam pelo CSSOM (não são bloqueados). Colocar os cabeçalhos no nível do `server` faria as locations com proxy herdá-los e duplicar os do helmet (e um `add_header` em uma location desliga a herança, por isso o arquivo é incluído inteiro em cada location do SPA).
+
+**Alternativas descartadas:**
+- *`add_header` no nível do server*: duplicaria e contradiria os cabeçalhos da API.
+- *`sourcemap: 'hidden'` com bloqueio dos `.map` no nginx*: útil com um serviço de rastreamento de erros, que o projeto não tem.
+- *HSTS no nginx*: o compose serve HTTP; HSTS pertence ao proxy com TLS de produção.
+
+---
+
+## D-033 - Robustez da interface: estado do projeto, confirmação e quadro com teto
+
+**Contexto:** O QA encontrou telas "pela metade" e fluxos frágeis: depois de uma falha de rede ao entrar em Tarefas/Quadro, "Tentar novamente" recarregava só as tarefas e a tela ficava sem o nome do projeto e em modo somente leitura até o F5 (TRV-11); erros 403/404/400 ofereciam "Tentar novamente" (PRJ-19); a lista não editava responsável nem prazo (TAR-06); exclusões usavam `window.confirm`; depois de Sair, o login de outra pessoa voltava para a rota de quem saiu (AUT-24); o quadro com 5.047 tarefas criava 35 mil nós no DOM e precisaria de mais de 100 requisições por minuto acima de ~9.900 tarefas (KAN-15); o campo "Adicionar" ficava no fim da coluna (KAN-11); o placeholder da busca era cortado (PRJ-08) e não havia skip-link nem título por rota (TRV-25).
+
+**Decisão:**
+- **Estado do projeto** (`features/projects/ProjectUnavailable`): Detalhe, Tarefas, Quadro e Membros só renderizam depois que o projeto (e o papel do usuário) carregou; antes, esqueleto. Erro passageiro (rede, 5xx, 429; `isRetryableError`) mostra "Tentar novamente", que recarrega **projeto, membros e a lista**; 400/403/404 mostram `Projeto não encontrado ou você não tem acesso a ele.` e "Voltar para projetos". O relatório com um projeto alheio no filtro oferece "Ver todos os meus projetos".
+- **Detalhe da tarefa único** (`features/tasks/TaskDetailsModal`): o mesmo modal no quadro (clique no cartão) e na lista (o título é um botão, com foco visível, Enter abre), com título, descrição, responsável (trocar e remover), status, data limite e excluir; somente leitura para `viewer`. O select de status continua na linha.
+- **`ConfirmDialog`** (`components/ui/ConfirmDialog` + `stores/confirmStore` + `useConfirm`): sobre o `Modal`, `role="alertdialog"`, foco inicial em Cancelar, Esc e clique no fundo cancelam, a ação roda dentro do diálogo com o botão em carregamento (mesma largura) e o diálogo travado; falha fecha o diálogo e vira toast. O `Modal` ganhou pilha (só o do topo responde a Esc e Tab) para a confirmação abrir sobre o detalhe da tarefa.
+- **Sessão:** Sair marca a saída voluntária (as rotas protegidas levam à home, sem guardar a rota); 401 guarda o id do usuário da sessão expirada, e o login seguinte só volta para a rota de origem se for o **mesmo** usuário (`postLoginPath`). `/login` e `/register` redirecionam quem já tem sessão (`GuestOnly`, único lugar que decide o destino depois de entrar). O erro antigo do formulário some ao editar e quando o navegador barra o envio; `autocomplete` correto nos campos.
+- **Quadro:** carrega no máximo **5.000 tarefas** (50 páginas de 100) e avisa `Exibindo as 5.000 tarefas mais recentes. Use a busca ou os filtros para refinar.`; cada coluna mostra 50 cartões por vez ("Mostrar mais (N restantes)") com o total real no cabeçalho, tem altura máxima pela viewport (`--spacing-kanban-column`) com rolagem própria e a criação rápida no topo. O indicador "Carregando tarefas… (página X de Y)" continua.
+- **Busca:** a área da direita do campo (selo "Enter" ou "Limpar") só reserva espaço quando aparece, então o placeholder sai completo de 390px a 1440px; "Limpar" devolve o foco ao campo.
+- **Acessibilidade:** link "Pular para o conteúdo" nos dois layouts e `<title>` por rota (`useDocumentTitle`: `Projetos · Gestão de Projetos e Tarefas`, `Tarefas — <projeto> · …`). Relatório mostra `<1%` para valores acima de zero e abaixo de 1%.
+
+**Justificativa:** Cada item fecha um achado do QA sem trocar de stack: os estados de erro passam a refletir o que dá para fazer, a edição da tarefa tem um único código para lista e quadro, a confirmação segue o design system e o quadro tem custo limitado no navegador e no rate limit.
+
+**Alternativas descartadas:**
+- *Virtualização do quadro (react-window)*: dependência e complexidade a mais com arrastar e soltar entre listas; janelas de 50 cartões resolvem o volume do desafio.
+- *Endpoint de quadro por coluna*: muda a API; fica como evolução (README, seção 14).
+- *Biblioteca de diálogos (Radix, Headless UI)*: o `Modal` do design system já tinha foco, animação e acessibilidade; faltava só a pilha.
+
+---
+
+## D-034 - Lint e testes do frontend
+
+**Contexto:** O frontend tinha só `tsc` e build (revisão sênior): sem lint, sem testes, e com `lucide-react` instalado sem uso.
+
+**Decisão:** `oxlint` (o mesmo do backend) com os plugins `react`, `jsx-a11y`, `typescript`, `unicorn`, `oxc` e `vitest`, em `frontend/.oxlintrc.json`, rodando com `--deny-warnings` (`npm run lint`: aviso também falha). A regra `jsx-a11y/prefer-tag-over-role` fica **desligada**, com o motivo no arquivo: ela pede `<output>` no lugar de `role="status"` (regiões `aria-live` que não são resultado de formulário), `<dialog>` no lugar do `Modal` (que tem foco, pilha e animação próprios) e `<progress>` na barra indeterminada; os papéis usados são os do WAI-ARIA APG. A regra `react/set-state-in-effect` é desligada **linha a linha**, com motivo, só nos efeitos que disparam a busca de dados (D-007); os demais avisos foram corrigidos no código (`ActivityBar` sem estado derivável, `Toast` ajustando o estado no render, refs do `Modal` atualizados em efeito, cartão do Kanban com botão em vez de `role="button"`, fundo do modal com `role="presentation"`). **Vitest** em ambiente node para a lógica pura (D-008), sem jsdom: `npm run test`. `lucide-react` removido. O CI roda lint, typecheck, testes e build do frontend.
+
+**Justificativa:** Uma ferramenta de lint para o monorepo, rápida e com regras de hooks e acessibilidade; testes da lógica que decide permissões, mensagens e redirecionamentos, onde um erro passaria despercebido no `tsc`.
+
+**Alternativas descartadas:**
+- *ESLint + plugins*: mais configuração e mais lento, sem ganho para este código.
+- *jsdom + Testing Library já nesta entrega*: mais dependências; os componentes visuais foram verificados no navegador (relatório de verificação) e ficam para a próxima camada de testes.
+- *Desligar `react/set-state-in-effect` no projeto inteiro*: esconderia efeitos novos que não são busca de dados.

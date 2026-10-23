@@ -49,9 +49,9 @@ src/
 ├── app.setup.ts            # config HTTP: helmet, CORS, ValidationPipe, filtro de exceções, Swagger
 ├── app.module.ts           # módulos e guards globais (rate limit, JWT)
 ├── common/                 # transversal: decorators, filtros, pipes, DTOs de paginação, mensagens PT-BR, utils
-├── config/                 # env/ (validação do ambiente), database/ (TypeORM, SSL, CLI), throttle/ (rate limit)
+├── config/                 # env/ (validação do ambiente e aviso de JWT_SECRET fraco), database/ (TypeORM, SSL, CLI), throttle/ (rate limit)
 ├── database/
-│   ├── migrations/         # uma migration por propósito
+│   ├── migrations/         # uma migration por propósito (inclui a extensão unaccent das buscas)
 │   └── seeds/seed.ts
 ├── modules/                # uma pasta por feature
 │   ├── auth/  users/  projects/  tasks/  reports/  health/
@@ -59,16 +59,16 @@ src/
 └── shared/types/           # tipos compartilhados
 ```
 
-Fluxo de uma requisição: guards globais (rate limit e JWT) → `ValidationPipe` → controller (só delega) → service (regra de negócio e autorização por papel) → repository (queries) → banco. Qualquer exceção passa pelo `AllExceptionsFilter`, que devolve o formato de erro padrão com `requestId`.
+Fluxo de uma requisição: guards globais (rate limit e JWT) → `ValidationPipe` (sem conversão implícita de tipos, D-031) → controller (só delega) → service (regra de negócio e autorização por papel) → repository (queries) → banco. Qualquer exceção passa pelo `AllExceptionsFilter`, que devolve o formato de erro padrão com `requestId`.
 
 ## Variáveis de ambiente
 
-Validadas no boot por `src/config/env/env.validation.ts`; a lista completa, com padrões, está na [seção 6 do README da raiz](../README.md#6-variáveis-de-ambiente) e em `.env.example`.
+Validadas no boot por `src/config/env/env.validation.ts`; a lista completa, com padrões, está na [seção 6 do README da raiz](../README.md#6-variáveis-de-ambiente) e em `.env.example`. Com um `JWT_SECRET` de exemplo ou previsível, a API sobe e registra um `WARN` no boot (`src/config/env/jwt-secret.check.ts`): gere um segredo com `openssl rand -hex 32`.
 
 ## Testes
 
 - `npm run test`: unitários (`src/**/*.spec.ts` e `test/**/*.spec.ts`), sem banco, com repositórios mockados (Vitest + SWC, que emite os metadados de decorators de que a DI do Nest precisa).
-- `npm run test:e2e`: `test/e2e/*.e2e-spec.ts`, a aplicação inteira com `supertest` contra um PostgreSQL real em banco separado. Crie o banco uma vez (`docker exec api-postgres psql -U app -d postgres -c "CREATE DATABASE app_test"`) ou defina `TEST_DATABASE_URL`; o nome do banco **precisa terminar em `_test`**. A cada execução o schema `public` desse banco é recriado e as migrations reais são aplicadas.
+- `npm run test:e2e`: `test/e2e/*.e2e-spec.ts`, a aplicação inteira com `supertest` contra um PostgreSQL real em banco separado. Crie o banco uma vez (`docker exec api-postgres psql -U app -d postgres -c "CREATE DATABASE app_test"`) ou defina `TEST_DATABASE_URL`; o nome do banco **precisa terminar em `_test`**. A cada execução o schema `public` desse banco é recriado e as migrations reais são aplicadas (inclusive a que habilita a extensão `unaccent`, que já vem na imagem `postgres:17-alpine`).
 - `npm run test:cov` e `npm run test:e2e:cov`: cobertura (`coverage/` e `coverage/e2e/`).
 
 Detalhes, o que é coberto e o CI: [seção 8 do README da raiz](../README.md#8-testes-e-ci) e decisão D-008 em [`docs/partitura.md`](../docs/partitura.md).
