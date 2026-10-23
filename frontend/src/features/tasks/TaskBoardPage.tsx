@@ -22,7 +22,14 @@ import { STATUS_TONES } from '@/utils/tone';
 import { ProjectUnavailable } from '@/features/projects/ProjectUnavailable';
 import { useMembers } from '@/features/projects/useMembers';
 import { useProject } from '@/features/projects/useProject';
-import { BOARD_COLUMN_PAGE, buildColumns, columnWindow } from './board';
+import {
+  BOARD_COLUMN_PAGE,
+  buildColumns,
+  columnWindow,
+  isTaskDrag,
+  leftColumn,
+  TASK_DRAG_TYPE,
+} from './board';
 import { BOARD_MAX_TASKS, createTask, updateTask } from './tasks.service';
 import { TaskDetailsModal } from './TaskDetailsModal';
 import { TaskViewTabs } from './TaskViewTabs';
@@ -48,6 +55,7 @@ export function TaskBoardPage() {
   const [search, setSearch] = useState('');
   const {
     data: tasks,
+    total,
     truncated,
     loading,
     loaded,
@@ -120,7 +128,7 @@ export function TaskBoardPage() {
     }
 
     draggedRef.current = true;
-    event.dataTransfer.setData('text/plain', taskId);
+    event.dataTransfer.setData(TASK_DRAG_TYPE, taskId);
     event.dataTransfer.effectAllowed = 'move';
 
     // Imagem de arraste "levantada": copia do cartao com sombra (o original vira o placeholder).
@@ -144,8 +152,9 @@ export function TaskBoardPage() {
     }, 0);
   }
 
+  /** Qualquer ponto da coluna (cabecalho, criacao rapida, lista) aceita o cartao (C6-06). */
   function handleDragOver(event: DragEvent<HTMLElement>, status: TaskStatus) {
-    if (!canWrite) {
+    if (!canWrite || !isTaskDrag(event.dataTransfer.types)) {
       return;
     }
 
@@ -154,10 +163,21 @@ export function TaskBoardPage() {
     setOverStatus(status);
   }
 
+  function handleDragLeave(event: DragEvent<HTMLElement>, status: TaskStatus) {
+    if (leftColumn(event.currentTarget, event.relatedTarget as Node | null)) {
+      setOverStatus((current) => (current === status ? null : current));
+    }
+  }
+
   function handleDrop(event: DragEvent<HTMLElement>, status: TaskStatus) {
+    if (!isTaskDrag(event.dataTransfer.types)) {
+      return;
+    }
+
+    // preventDefault tambem impede o navegador de inserir algo no campo "Nova tarefa".
     event.preventDefault();
 
-    const taskId = event.dataTransfer.getData('text/plain');
+    const taskId = event.dataTransfer.getData(TASK_DRAG_TYPE);
     handleDragEnd();
 
     if (taskId) {
@@ -262,7 +282,8 @@ export function TaskBoardPage() {
             setAssigneeFilter('');
           }}
         />
-        <ResultCount count={totalLoaded} loading={loading} />
+        {/* Total real do servidor (meta.total), mesmo acima do teto de 5.000 carregadas. */}
+        <ResultCount count={total} loading={loading} />
       </Toolbar>
 
       <p className="max-w-prose text-body text-slate-600">
@@ -315,18 +336,21 @@ export function TaskBoardPage() {
               );
 
               return (
-                <section key={column.status} aria-label={label}>
-                  {/* Alvo de soltar: a coluna inteira, com rolagem propria (altura maxima pela viewport). */}
-                  <div
-                    onDragOver={(e) => handleDragOver(e, column.status)}
-                    onDragLeave={() => setOverStatus((current) => (current === column.status ? null : current))}
-                    onDrop={(e) => handleDrop(e, column.status)}
-                    className={`flex max-h-kanban-column min-h-64 flex-col gap-4 rounded-surface border p-compact transition ${
-                      overStatus === column.status
-                        ? 'border-slate-900 bg-slate-100 ring-2 ring-slate-300'
-                        : 'border-slate-200 bg-slate-50'
-                    }`}
-                  >
+                // Alvo de soltar: a coluna INTEIRA (borda, cabecalho, criacao rapida e lista), com
+                // rolagem propria. Os eventos de qualquer filho (inclusive da <section>) sobem ate aqui.
+                <div
+                  key={column.status}
+                  data-drop-status={column.status}
+                  onDragOver={(e) => handleDragOver(e, column.status)}
+                  onDragLeave={(e) => handleDragLeave(e, column.status)}
+                  onDrop={(e) => handleDrop(e, column.status)}
+                  className={`flex max-h-kanban-column min-h-64 flex-col rounded-surface border p-compact transition ${
+                    overStatus === column.status
+                      ? 'border-slate-900 bg-slate-100 ring-2 ring-slate-300'
+                      : 'border-slate-200 bg-slate-50'
+                  }`}
+                >
+                  <section aria-label={label} className="flex min-h-0 flex-1 flex-col gap-4">
                     <header className="flex items-center justify-between gap-3">
                       <h2 className="text-body font-semibold text-slate-900">{label}</h2>
                       <Badge tone={STATUS_TONES[column.status]}>{formatNumber(column.tasks.length)}</Badge>
@@ -426,8 +450,8 @@ export function TaskBoardPage() {
                         {`Mostrar mais (${formatNumber(remaining)} ${remaining === 1 ? 'restante' : 'restantes'})`}
                       </Button>
                     )}
-                  </div>
-                </section>
+                  </section>
+                </div>
               );
             })}
           </div>

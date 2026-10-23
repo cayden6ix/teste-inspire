@@ -37,3 +37,23 @@ export function columnWindow(total: number, limit: number): { shown: number; rem
   const shown = Math.min(total, Math.max(0, limit));
   return { shown, remaining: total - shown };
 }
+
+/**
+ * Tipo proprio do arraste de cartao. Nao e `text/plain` de proposito: texto arrastado (ex.: uma
+ * selecao no campo "Nova tarefa") nao vira movimento de cartao, e o navegador nao insere o id da
+ * tarefa num campo de texto quando o cartao e solto sobre ele.
+ */
+export const TASK_DRAG_TYPE = 'application/x-task-id';
+
+/** O arraste em andamento e de um cartao do quadro? (os tipos ficam visiveis no dragover). */
+export function isTaskDrag(types: readonly string[]): boolean {
+  return types.includes(TASK_DRAG_TYPE);
+}
+
+/**
+ * O `dragleave` saiu mesmo da coluna? Ele tambem dispara ao passar de um filho para outro
+ * (cabecalho -> campo -> lista); so desliga o realce quando o destino esta fora da coluna.
+ */
+export function leftColumn(column: Pick<Node, 'contains'>, related: Node | null): boolean {
+  return related === null || !column.contains(related);
+}
