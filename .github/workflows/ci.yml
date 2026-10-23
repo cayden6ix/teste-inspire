@@ -29,7 +29,8 @@ jobs:
 
     services:
       # Banco só dos testes e2e. O nome termina em _test: a guarda de test/setup
-      # recusa qualquer banco que não siga essa regra.
+      # recusa qualquer banco que não siga essa regra. A imagem oficial já traz o
+      # contrib com a extensão unaccent, habilitada por migration (D-029).
       postgres:
         image: postgres:17-alpine
         env:
@@ -86,7 +87,7 @@ jobs:
         run: npm run test:e2e
 
   frontend:
-    name: Frontend (tipos e build)
+    name: Frontend (lint, tipos, testes e build)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -107,8 +108,14 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Lint (oxlint, avisos falham)
+        run: npm run lint
+
       - name: Checagem de tipos
         run: npm run typecheck
+
+      - name: Testes unitários (Vitest)
+        run: npm run test
 
       - name: Build
         run: npm run build
