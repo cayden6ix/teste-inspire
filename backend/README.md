@@ -1,132 +1,74 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Backend - API de Gestão de Projetos e Tarefas
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API REST em **NestJS 12** + **TypeORM** + **PostgreSQL**. Visão geral do produto, como rodar com Docker, decisões e limitações: [README da raiz](../README.md). Decisões técnicas detalhadas: [`docs/partitura.md`](../docs/partitura.md). Contrato dos endpoints: [`docs/api/contrato-d011-d015.md`](../docs/api/contrato-d011-d015.md).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Início rápido
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+Pré-requisitos: Node.js 24, npm 11 e um Postgres (o mais fácil é `docker compose up -d postgres` na raiz, que precisa do `.env` da raiz).
 
 ```bash
-$ npm install
+npm install
+cp .env.example .env     # ajuste o JWT_SECRET (mínimo de 32 caracteres)
+npm run build            # a CLI de migrations usa o dist/
+npm run migration:run    # cria o schema
+npm run seed             # opcional: dados de exemplo (senha Senha@123)
+npm run start:dev        # API em http://localhost:3000/api, Swagger em /docs
 ```
 
-## Compile and run the project
+## Scripts
 
-```bash
-# development
-$ npm run start
+Lista dos scripts de `package.json` mais usados (também existem `start`, `start:debug`, `test:debug` e `deploy`, do template do Nest).
 
-# watch mode
-$ npm run start:dev
+| Script | Descrição |
+| --- | --- |
+| `npm run start:dev` | API em modo watch |
+| `npm run start:debug` | API em modo watch com inspector |
+| `npm run build` | Compila para `dist/` (`nest build`) |
+| `npm run start:prod` | Roda o `dist/main` compilado |
+| `npm run lint` | oxlint com checagem de tipos (`src/` e `test/`) |
+| `npm run format` | Prettier em `src/` e `test/` |
+| `npm run test` | Testes unitários (Vitest) |
+| `npm run test:watch` | Testes unitários em modo watch |
+| `npm run test:cov` | Testes unitários com cobertura |
+| `npm run test:e2e` | Testes e2e (supertest + PostgreSQL real, banco `app_test`) |
+| `npm run test:e2e:cov` | Testes e2e com cobertura (`coverage/e2e`) |
+| `npm run migration:run` | Aplica as migrations pendentes |
+| `npm run migration:show` | Lista as migrations e o estado de cada uma |
+| `npm run migration:revert` | Desfaz a última migration |
+| `npm run migration:generate -- src/database/migrations/Nome` | Gera uma migration a partir das entidades (compila antes) |
+| `npm run seed` | Compila e roda o seed |
+| `npm run seed:run` | Roda o seed sobre o `dist/` já compilado |
 
-# production mode
-$ npm run start:prod
+As migrations e o seed rodam sobre o código **compilado** (`dist/`), por isso é preciso `npm run build` antes em um clone novo (`migration:generate` e `seed` já compilam sozinhos). Motivo e detalhes em D-018.
+
+## Estrutura de `src/`
+
+```text
+src/
+├── main.ts                 # bootstrap: cria o app e escuta a porta
+├── app.setup.ts            # config HTTP: helmet, CORS, ValidationPipe, filtro de exceções, Swagger
+├── app.module.ts           # módulos e guards globais (rate limit, JWT)
+├── common/                 # transversal: decorators, filtros, pipes, DTOs de paginação, mensagens PT-BR, utils
+├── config/                 # env/ (validação do ambiente), database/ (TypeORM, SSL, CLI), throttle/ (rate limit)
+├── database/
+│   ├── migrations/         # uma migration por propósito
+│   └── seeds/seed.ts
+├── modules/                # uma pasta por feature
+│   ├── auth/  users/  projects/  tasks/  reports/  health/
+│   │   # em cada módulo: controllers/ services/ repositories/ dto/ entities/
+└── shared/types/           # tipos compartilhados
 ```
 
-## Run tests
+Fluxo de uma requisição: guards globais (rate limit e JWT) → `ValidationPipe` → controller (só delega) → service (regra de negócio e autorização por papel) → repository (queries) → banco. Qualquer exceção passa pelo `AllExceptionsFilter`, que devolve o formato de erro padrão com `requestId`.
 
-```bash
-# unit tests
-$ npm run test
+## Variáveis de ambiente
 
-# e2e tests
-$ npm run test:e2e
+Validadas no boot por `src/config/env/env.validation.ts`; a lista completa, com padrões, está na [seção 6 do README da raiz](../README.md#6-variáveis-de-ambiente) e em `.env.example`.
 
-# test coverage
-$ npm run test:cov
-```
+## Testes
 
-## Deployment
+- `npm run test`: unitários (`src/**/*.spec.ts` e `test/**/*.spec.ts`), sem banco, com repositórios mockados (Vitest + SWC, que emite os metadados de decorators de que a DI do Nest precisa).
+- `npm run test:e2e`: `test/e2e/*.e2e-spec.ts`, a aplicação inteira com `supertest` contra um PostgreSQL real em banco separado. Crie o banco uma vez (`docker exec api-postgres psql -U app -d postgres -c "CREATE DATABASE app_test"`) ou defina `TEST_DATABASE_URL`; o nome do banco **precisa terminar em `_test`**. A cada execução o schema `public` desse banco é recriado e as migrations reais são aplicadas.
+- `npm run test:cov` e `npm run test:e2e:cov`: cobertura (`coverage/` e `coverage/e2e/`).
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-To add it to this project, run this and approve the code it prints at [observe.nestjs.com/link](https://observe.nestjs.com/link) - signing up for free if you have no account:
-
-```bash
-$ npx @nestjs/observe link
-```
-
-It installs `@nestjs/observe`, wires it into `AppModule` and `main.ts`, and writes the app key and secret into `.env`, which every `nest start` script (`start`, `start:dev`, `start:debug`) then loads. In production, set `OBSERVE_APP_KEY` and `OBSERVE_APP_SECRET` in the environment instead.
-
-Or do it by hand:
-
-```bash
-$ npm install @nestjs/observe
-```
-
-Then follow the [setup guide](https://docs.nestjs.com/observability/sdk) - it takes a single import and an app key.
-
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Detalhes, o que é coberto e o CI: [seção 8 do README da raiz](../README.md#8-testes-e-ci) e decisão D-008 em [`docs/partitura.md`](../docs/partitura.md).
