@@ -44,7 +44,7 @@ Organizadas pelos requisitos do desafio.
 | **Usuário em vários projetos** | Relação N:N (`project_members`) com um papel por vínculo. A mesma pessoa pode ser `owner` de um projeto e `viewer` de outro. |
 | **Projetos** | CRUD completo, listagem paginada só com os projetos em que a pessoa é membro, busca por nome/descrição (sem diferenciar maiúsculas nem acentos) e ordenação. |
 | **Tarefas** | CRUD dentro de um projeto, com status (`pendente`, `em_andamento`, `concluida`), responsável (que precisa ser membro do projeto) e data limite. Filtros por status, responsável, texto (sem diferenciar maiúsculas nem acentos: `descricao` acha `Descrição`) e intervalo de datas; ordenação por título, status, data limite, criação ou atualização. |
-| **Exportação e importação** | `GET /api/projects/:projectId/tasks/export` devolve todas as tarefas em CSV (UTF-8 com BOM, para o Excel; em ordem cronológica). `POST /api/projects/:projectId/tasks/import` cria tarefas em massa a partir de um CSV: linhas válidas são importadas e as inválidas voltam em `errors[]` com o número da linha; arquivo que não é CSV ou sem a coluna `titulo` é recusado com o motivo. Exportar e importar de volta preserva a ordem das tarefas. |
+| **Exportação e importação** | `GET /api/projects/:projectId/tasks/export` devolve todas as tarefas em CSV (UTF-8 com BOM, para o Excel; em ordem cronológica). `POST /api/projects/:projectId/tasks/import` cria tarefas em massa a partir de um CSV: linhas válidas são importadas e as inválidas voltam em `errors[]` com o número da linha; arquivo vazio, que não é CSV ou sem a coluna `titulo` é recusado com o motivo. Exportar e importar de volta preserva a ordem das tarefas. |
 | **Relatórios** | `GET /api/reports?groupBy=status\|user&projectId=` agrega tarefas por status ou por responsável, de um projeto ou de todos os projetos da pessoa. |
 | **Paginação e filtros** | Todas as listagens usam o envelope `{ data, meta }` (página padrão 1, 15 itens por página, máximo 100; na busca de usuários, 10) com ordenação determinística. |
 | **Interface** | SPA com login/cadastro, projetos, detalhe do projeto, membros e papéis, lista de tarefas e **quadro Kanban** (arrastar uma tarefa muda o status) com o mesmo detalhe/edição da tarefa, relatórios, diálogo de confirmação nas exclusões, toasts e estados de carregamento, vazio e erro. |
@@ -220,7 +220,7 @@ O seed (`backend/src/database/seeds/seed.ts`) não cria tabelas: rode-o depois d
 
 ## 8. Testes e CI
 
-O backend tem **786 testes** (439 unitários e 347 e2e) e o frontend **95 testes unitários**, na data desta revisão.
+O backend tem **794 testes** (446 unitários e 348 e2e) e o frontend **101 testes unitários**, na data desta revisão.
 
 | Comando (em `backend/`) | O que roda |
 | --- | --- |
@@ -520,7 +520,7 @@ Regras adicionais (`project-members.service.ts`):
 - **Diretório de usuários protegido:** `GET /users` só para quem gerencia membros em algum projeto, com 3 ou mais caracteres no e-mail ou no nome e no máximo 10 por página.
 - **CSV seguro:** a exportação neutraliza fórmulas (valores iniciados por `=`, `+`, `-`, `@`, tab ou CR ganham um apóstrofo na frente) e a importação desfaz o apóstrofo, então exportar e importar de volta preserva o texto. A importação aceita no máximo 5000 linhas e 5 MB e grava em lotes de 500 dentro de uma transação.
 - **helmet** (cabeçalhos de segurança da API e do Swagger) e **CORS** restrito às origens configuradas, sem `credentials` (a autenticação é por header `Authorization`, não por cookie).
-- **nginx do frontend** (D-032): o HTML e os assets do SPA saem com `Content-Security-Policy` sem `unsafe-inline` (`default-src 'self'`, `frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` e `Cross-Origin-Opener-Policy`; `/api/` e `/docs` ficam só com os cabeçalhos do helmet (sem duplicar). O `index.html` vai com `Cache-Control: no-cache`, o build não publica source maps (`/assets/*.map` dá 404) e o nginx não anuncia a versão.
+- **nginx do frontend** (D-032): o HTML e os assets do SPA saem com `Content-Security-Policy` sem `unsafe-inline` (`default-src 'self'`, `frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` e `Cross-Origin-Opener-Policy`; `/api/` e `/docs` ficam só com os cabeçalhos do helmet (sem duplicar). O `index.html` vai com `Cache-Control: no-cache` e os assets com hash com um único `Cache-Control: public, max-age=31536000, immutable`, o build não publica source maps (`/assets/*.map` dá 404) e o nginx não anuncia a versão.
 - **`JWT_SECRET` fraco é avisado:** com o valor do `.env.example` (ou um segredo previsível) a API registra um `WARN` no boot pedindo um segredo próprio (`openssl rand -hex 32`).
 - **Banco:** `DATABASE_SSL` (`false`, `require`, `verify-full`) separado do `NODE_ENV`; violações de unicidade e de chave estrangeira em corrida viram 409 em vez de 500; criação de projeto (projeto + `owner`) e remoção de membro (+ desatribuição de tarefas) acontecem em transação.
 - **Swagger** pode ser desligado com `SWAGGER_ENABLED=false`; o **seed** recusa rodar em produção sem `SEED_ALLOW_PROD=true`.
@@ -562,7 +562,8 @@ Lista honesta do que ficou fora ou pode melhorar.
 
 **Frontend**
 
-- **O Kanban carrega até 5.000 tarefas em série** (50 páginas de 100): acima disso mostra as mais recentes e pede filtros; a contagem de cada coluna é a das tarefas carregadas. Um endpoint de quadro por coluna resolveria.
+- **O Kanban carrega até 5.000 tarefas em série** (50 páginas de 100): acima disso mostra as mais recentes e pede filtros; o contador da barra mostra o total real, mas a contagem de cada coluna é a das tarefas carregadas. Um endpoint de quadro por coluna resolveria.
+- **A tela de membros não tem busca**, só o filtro por papel (com 15 por página); em projetos com muitos membros, encontrar alguém exige paginar.
 - **Testes do frontend só de lógica pura** (Vitest em node): sem testes de componente nem E2E de navegador; as telas foram verificadas manualmente no navegador.
 - **Tipos copiados à mão dos DTOs** da API (o ideal é gerá-los do OpenAPI).
 - **Bundle único** (sem code-splitting por rota).
