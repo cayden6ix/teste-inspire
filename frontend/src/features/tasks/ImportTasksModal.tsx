@@ -7,6 +7,7 @@ import { Modal, ModalCloseButton } from '@/components/ui/Modal';
 import type { ImportResult } from '@/types/task';
 import { useToast } from '@/stores/toastStore';
 import { errorMessage } from '@/utils/errorMessage';
+import { csvFileProblem } from './importFile';
 import { importTasksCsv } from './tasks.service';
 
 type ImportTasksModalProps = {
@@ -30,8 +31,10 @@ export function ImportTasksModal({ projectId, onClose, onImported }: ImportTasks
   const toast = useToast();
 
   async function handleSubmit() {
-    if (!file) {
-      setError('Escolha um arquivo CSV para importar.');
+    // Sem arquivo ou arquivo de 0 bytes: explica no modal, sem chamar a API.
+    const problem = csvFileProblem(file);
+    if (problem || !file) {
+      setError(problem);
       return false;
     }
 
@@ -127,8 +130,10 @@ export function ImportTasksModal({ projectId, onClose, onImported }: ImportTasks
           tabIndex={-1}
           className="sr-only"
           onChange={(e) => {
-            setFile(e.target.files?.[0] ?? null);
-            setError(null);
+            const chosen = e.target.files?.[0] ?? null;
+            setFile(chosen);
+            // Arquivo vazio ja avisa ao escolher; o envio continua bloqueado em handleSubmit.
+            setError(chosen && chosen.size === 0 ? csvFileProblem(chosen) : null);
           }}
         />
         <div className="flex items-center gap-3">
