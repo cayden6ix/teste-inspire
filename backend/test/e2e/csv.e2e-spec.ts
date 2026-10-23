@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { parse } from 'csv-parse/sync';
 import { ProjectRole } from '../../src/common/enums/project-role.enum.js';
@@ -387,12 +388,32 @@ describe('CSV: exportação e importação (e2e)', () => {
       );
     });
 
-    it('CSV vazio ou só com espaços devolve 400', async () => {
-      const vazio = await importarCsvPuro('   \n  ');
-      const arquivoVazio = await importarArquivo('');
+    it('arquivo vazio (0 bytes, só espaços ou corpo text/csv vazio) devolve 400 "O arquivo enviado está vazio."', async () => {
+      const arquivoZeroBytes = await importarArquivo(Buffer.alloc(0));
+      const arquivoEspacos = await importarArquivo('  \n ');
+      const corpoEspacos = await importarCsvPuro('   \n  ');
+      const corpoVazio = await testApp
+        .http()
+        .post(url(`/projects/${projeto.id}/tasks/import`))
+        .set(...bearer(ana.token))
+        .set('Content-Type', 'text/csv')
+        .send('');
 
-      expect(vazio.status).toBe(400);
-      expect(arquivoVazio.status).toBe(400);
+      for (const response of [arquivoZeroBytes, arquivoEspacos, corpoEspacos, corpoVazio]) {
+        expect(response.status).toBe(400);
+        expect(response.body.message).toBe('O arquivo enviado está vazio.');
+      }
+      expect(await listarTudo()).toEqual([]);
+    });
+
+    it('arquivo vazio: projeto alheio e inexistente recebem a mesma resposta (nada vaza, D-027)', async () => {
+      const intruso = await criarUsuario(testApp, { name: 'Intruso' });
+
+      const alheio = await importarArquivo(Buffer.alloc(0), projeto.id, intruso);
+      const inexistente = await importarArquivo(Buffer.alloc(0), randomUUID(), intruso);
+
+      expect(alheio.status).toBe(inexistente.status);
+      expect(alheio.body.message).toBe(inexistente.body.message);
     });
 
     it('multipart com o arquivo no campo errado devolve 400 em português', async () => {

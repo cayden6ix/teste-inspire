@@ -20,6 +20,53 @@ const UTF8_BOM = '\uFEFF';
 
 export const CSV_NOT_CSV_MESSAGE = 'O arquivo enviado não parece ser um CSV válido.';
 
+export const CSV_EMPTY_FILE_MESSAGE = 'O arquivo enviado está vazio.';
+
+export const CSV_MISSING_FILE_MESSAGE =
+  'Envie o CSV no corpo da requisição (text/csv) ou no campo file (multipart/form-data).';
+
+/** Tipos de conteudo aceitos para o CSV puro no corpo (o body parser de texto da API). */
+const CSV_BODY_TYPES = ['text/csv', 'text/plain'];
+
+/**
+ * Texto do CSV enviado na importacao (D-030): o arquivo do campo `file` (multipart) ou o corpo
+ * `text/csv`. Distingue o arquivo VAZIO (0 bytes, so BOM ou so espacos) de nenhum arquivo:
+ * - arquivo presente, mas vazio, ou corpo text/csv vazio -> 400 `O arquivo enviado está vazio.`;
+ * - nem arquivo nem corpo CSV -> 400 orientando como enviar.
+ *
+ * Com corpo vazio o body parser nao roda e `body` chega como `{}`: por isso o tipo de conteudo
+ * decide se a pessoa tentou mandar um CSV (vazio) ou nao mandou nada.
+ */
+export function resolveCsvUpload(
+  file: { buffer: Buffer } | undefined,
+  body: unknown,
+  contentType: string | undefined,
+): string {
+  const isBlank = (text: string) => !(text.startsWith(UTF8_BOM) ? text.slice(1) : text).trim();
+
+  if (file) {
+    const text = file.buffer.toString('utf8');
+    if (isBlank(text)) {
+      throw new BadRequestException(CSV_EMPTY_FILE_MESSAGE);
+    }
+    return text;
+  }
+
+  if (typeof body === 'string') {
+    if (isBlank(body)) {
+      throw new BadRequestException(CSV_EMPTY_FILE_MESSAGE);
+    }
+    return body;
+  }
+
+  const mediaType = (contentType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+  if (CSV_BODY_TYPES.includes(mediaType)) {
+    throw new BadRequestException(CSV_EMPTY_FILE_MESSAGE);
+  }
+
+  throw new BadRequestException(CSV_MISSING_FILE_MESSAGE);
+}
+
 export const CSV_NO_DATA_MESSAGE =
   'O arquivo enviado não parece ser um CSV válido: não há nenhuma linha de tarefa depois do cabeçalho.';
 

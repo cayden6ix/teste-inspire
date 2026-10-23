@@ -1,9 +1,9 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -39,6 +39,7 @@ import { ImportResultDto } from '../dto/import-result.dto.js';
 import { ListTasksQueryDto } from '../dto/list-tasks-query.dto.js';
 import { TaskResponseDto } from '../dto/task-response.dto.js';
 import { UpdateTaskDto } from '../dto/update-task.dto.js';
+import { resolveCsvUpload } from '../services/tasks-csv.service.js';
 import { TasksService } from '../services/tasks.service.js';
 
 interface UploadedCsvFile {
@@ -145,18 +146,10 @@ export class TasksController {
     @Param('projectId', PARSE_UUID_PIPE) projectId: string,
     @UploadedFile() file: UploadedCsvFile | undefined,
     @Body() body: unknown,
+    @Headers('content-type') contentType: string | undefined,
   ): Promise<ImportResultDto> {
-    const csvText = file
-      ? file.buffer.toString('utf8')
-      : typeof body === 'string'
-        ? body
-        : '';
-
-    if (!csvText.trim()) {
-      throw new BadRequestException(
-        'Envie o CSV no corpo da requisição (text/csv) ou no campo file (multipart/form-data).',
-      );
-    }
+    // Arquivo vazio (0 bytes) e ausencia de arquivo tem mensagens distintas (D-030).
+    const csvText = resolveCsvUpload(file, body, contentType);
 
     return this.tasksService.importCsv(projectId, user.id, csvText);
   }

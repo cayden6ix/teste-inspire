@@ -3,9 +3,12 @@ import { parse } from 'csv-parse/sync';
 import { TaskStatus } from '../../../common/enums/task-status.enum.js';
 import type { Task } from '../entities/task.entity.js';
 import {
+  CSV_EMPTY_FILE_MESSAGE,
+  CSV_MISSING_FILE_MESSAGE,
   CSV_NO_DATA_MESSAGE,
   CSV_NOT_CSV_MESSAGE,
   normalizeCsvKey,
+  resolveCsvUpload,
   TasksCsvService,
 } from './tasks-csv.service.js';
 
@@ -170,7 +173,7 @@ describe('TasksCsvService', () => {
     });
 
     it('remove espaços ao redor dos valores e o BOM do início do arquivo', () => {
-      const rows = service.parse('﻿titulo,status\n  Com espaço  , pendente \n');
+      const rows = service.parse('\uFEFFtitulo,status\n  Com espaço  , pendente \n');
 
       expect(rows).toEqual([{ titulo: 'Com espaço', status: 'pendente' }]);
     });
@@ -275,5 +278,50 @@ describe('TasksCsvService: proteção contra injeção de fórmula (R08)', () =>
 
     expect(linha?.['titulo']).toBe(valor);
     expect(linha?.['descricao']).toBe(valor);
+  });
+});
+
+describe('resolveCsvUpload (arquivo vazio x arquivo ausente, B2-03)', () => {
+  const arquivo = (texto: string) => ({ buffer: Buffer.from(texto, 'utf8') });
+
+  /** Mensagem do 400 lançado (falha o teste se não lançar). */
+  const erroDe = (...args: Parameters<typeof resolveCsvUpload>): string => {
+    try {
+      resolveCsvUpload(...args);
+    } catch (error) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      return (error as BadRequestException).message;
+    }
+    throw new Error('deveria ter recusado o envio.');
+  };
+
+  it('devolve o texto do arquivo multipart (com BOM intacto para o parse)', () => {
+    expect(resolveCsvUpload(arquivo('\uFEFFtitulo\nA\n'), {}, 'multipart/form-data; boundary=x')).toBe(
+      '\uFEFFtitulo\nA\n',
+    );
+  });
+
+  it('devolve o corpo text/csv', () => {
+    expect(resolveCsvUpload(undefined, 'titulo\nA\n', 'text/csv')).toBe('titulo\nA\n');
+  });
+
+  it.each([
+    ['arquivo de 0 bytes', arquivo('')],
+    ['arquivo só com BOM', arquivo('\uFEFF')],
+    ['arquivo só com espaços e quebras de linha', arquivo('  \n \r\n')],
+  ])('%s no campo file: "O arquivo enviado está vazio."', (_nome, file) => {
+    expect(erroDe(file, {}, 'multipart/form-data; boundary=x')).toBe(CSV_EMPTY_FILE_MESSAGE);
+  });
+
+  it('corpo text/csv vazio (o body parser não roda e o corpo chega como {}) também é arquivo vazio', () => {
+    expect(erroDe(undefined, {}, 'text/csv')).toBe(CSV_EMPTY_FILE_MESSAGE);
+    expect(erroDe(undefined, {}, 'text/plain; charset=utf-8')).toBe(CSV_EMPTY_FILE_MESSAGE);
+    expect(erroDe(undefined, '   ', 'text/csv')).toBe(CSV_EMPTY_FILE_MESSAGE);
+  });
+
+  it('sem arquivo e sem corpo CSV: orienta como enviar', () => {
+    expect(erroDe(undefined, {}, undefined)).toBe(CSV_MISSING_FILE_MESSAGE);
+    expect(erroDe(undefined, {}, 'application/json')).toBe(CSV_MISSING_FILE_MESSAGE);
+    expect(erroDe(undefined, {}, 'multipart/form-data; boundary=x')).toBe(CSV_MISSING_FILE_MESSAGE);
   });
 });
