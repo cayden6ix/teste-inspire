@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { AnimationEventHandler, ReactNode } from 'react';
 
 type CardProps = {
   title?: string;
@@ -6,18 +6,23 @@ type CardProps = {
   actions?: ReactNode;
   children?: ReactNode;
   className?: string;
+  onAnimationEnd?: AnimationEventHandler<HTMLElement>;
 };
 
-export function Card({ title, description, actions, children, className = '' }: CardProps) {
+/** Cartao/secao: padding p-card (24px), raio de superficie, titulo de secao. */
+export function Card({ title, description, actions, children, className = '', onAnimationEnd }: CardProps) {
   return (
-    <section className={`rounded border border-slate-200 bg-white p-5 ${className}`}>
+    <section
+      onAnimationEnd={onAnimationEnd}
+      className={`flex flex-col gap-4 rounded-surface border border-slate-200 bg-white p-card ${className}`}
+    >
       {(title || actions) && (
-        <header className="mb-4 flex items-start justify-between gap-4">
+        <header className="flex items-start justify-between gap-4">
           <div>
-            {title && <h2 className="text-base font-semibold text-slate-900">{title}</h2>}
-            {description && <p className="mt-1 text-sm text-slate-600">{description}</p>}
+            {title && <h2 className="text-heading font-semibold text-slate-900">{title}</h2>}
+            {description && <p className="mt-1 text-body text-slate-600">{description}</p>}
           </div>
-          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+          {actions && <div className="flex shrink-0 items-center gap-3">{actions}</div>}
         </header>
       )}
       {children}

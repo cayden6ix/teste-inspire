@@ -16,10 +16,11 @@ type BadgeProps = {
   children: ReactNode;
 };
 
+/** Selo: altura unica de 24px, fonte de legenda, formato de pilula. */
 export function Badge({ tone = 'slate', children }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${TONES[tone]}`}
+      className={`inline-flex h-6 min-w-6 items-center justify-center whitespace-nowrap rounded-pill px-2 text-caption font-medium ${TONES[tone]}`}
     >
       {children}
     </span>

@@ -13,7 +13,10 @@ const TONES = {
 
 export function Alert({ tone = 'error', children }: AlertProps) {
   return (
-    <p className={`rounded border px-3 py-2 text-sm ${TONES[tone]}`} role={tone === 'error' ? 'alert' : 'status'}>
+    <p
+      className={`rounded-control border px-4 py-3 text-body ${TONES[tone]}`}
+      role={tone === 'error' ? 'alert' : 'status'}
+    >
       {children}
     </p>
   );
