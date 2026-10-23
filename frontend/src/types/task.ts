@@ -11,7 +11,7 @@ export const TASK_STATUSES: TaskStatus[] = ['pendente', 'em_andamento', 'conclui
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   pendente: 'Pendente',
   em_andamento: 'Em andamento',
-  concluida: 'Concluida',
+  concluida: 'Concluída',
 };
 
 export interface Task {
@@ -38,6 +38,12 @@ export interface TaskInput {
 export interface TaskFilters {
   status?: TaskStatus;
   assigneeId?: string;
+  /** Busca parcial no titulo e na descricao, feita no servidor. */
+  search?: string;
+  /** Prazo a partir de (AAAA-MM-DD). */
+  dueFrom?: string;
+  /** Prazo ate (AAAA-MM-DD). */
+  dueTo?: string;
 }
 
 export interface ImportError {

@@ -7,10 +7,10 @@ export type ProjectRole = 'owner' | 'admin' | 'member' | 'viewer';
 export const PROJECT_ROLES: ProjectRole[] = ['owner', 'admin', 'member', 'viewer'];
 
 export const PROJECT_ROLE_LABELS: Record<ProjectRole, string> = {
-  owner: 'Owner',
-  admin: 'Admin',
+  owner: 'Proprietário',
+  admin: 'Administrador',
   member: 'Membro',
-  viewer: 'Viewer',
+  viewer: 'Visualizador',
 };
 
 export interface Project {
@@ -46,10 +46,38 @@ export interface AddMemberDto {
   role: ProjectRole;
 }
 
+/** Quem pode gerenciar membros (adicionar, alterar papel, remover): owner e admin. */
+export function canManageMembers(actorRole: ProjectRole | undefined): boolean {
+  return assignableRoles(actorRole).length > 0;
+}
+
 /**
- * O backend so deixa admin atribuir `member` ou `viewer`; `owner` e `admin`
- * sao exclusivos do owner do projeto.
+ * Papeis que o ATOR pode atribuir (POST/PATCH de membros). O papel `owner` nasce so na criacao do
+ * projeto e nunca e atribuivel: owner atribui admin, member ou viewer; admin, member ou viewer;
+ * os demais papeis nao gerenciam membros.
  */
-export function assignableRoles(currentRole: ProjectRole): ProjectRole[] {
-  return currentRole === 'owner' ? PROJECT_ROLES : PROJECT_ROLES.filter((r) => r === 'member' || r === 'viewer');
+export function assignableRoles(actorRole: ProjectRole | undefined): ProjectRole[] {
+  if (actorRole === 'owner') return ['admin', 'member', 'viewer'];
+  if (actorRole === 'admin') return ['member', 'viewer'];
+  return [];
+}
+
+/**
+ * Regras do backend para alterar o papel ou remover um membro (decide a linha da tela):
+ * ninguem mexe em si mesmo; o owner nunca e alterado nem removido; owner mexe em qualquer outro;
+ * admin so mexe em alvos member ou viewer; member e viewer nao gerenciam. Sem o id do usuario
+ * logado nao da para saber qual linha e a propria, entao nega.
+ */
+export function canManageMember(
+  actorRole: ProjectRole | undefined,
+  actorUserId: string | null,
+  target: Pick<ProjectMember, 'userId' | 'role'>,
+): boolean {
+  if (!actorRole || !actorUserId || target.userId === actorUserId || target.role === 'owner') {
+    return false;
+  }
+
+  if (actorRole === 'owner') return true;
+
+  return actorRole === 'admin' && (target.role === 'member' || target.role === 'viewer');
 }

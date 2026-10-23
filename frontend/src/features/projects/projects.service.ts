@@ -1,4 +1,5 @@
 import { httpClient } from '@/services/api/httpClient';
+import type { PaginatedResponse, PaginationParams } from '@/types/pagination';
 import type {
   AddMemberDto,
   CreateProjectDto,
@@ -13,8 +14,18 @@ import type {
  * O backend expoe `role` junto do projeto: o papel do usuario logado.
  */
 
-export async function listProjects(): Promise<Project[]> {
-  const { data } = await httpClient.get<Project[]>('/projects');
+export interface ProjectListParams extends PaginationParams {
+  search?: string;
+}
+
+export interface MemberListParams extends PaginationParams {
+  role?: ProjectRole;
+}
+
+export async function listProjects(
+  params: ProjectListParams = {},
+): Promise<PaginatedResponse<Project>> {
+  const { data } = await httpClient.get<PaginatedResponse<Project>>('/projects', { params });
   return data;
 }
 
@@ -37,8 +48,14 @@ export async function deleteProject(projectId: string): Promise<void> {
   await httpClient.delete(`/projects/${projectId}`);
 }
 
-export async function listMembers(projectId: string): Promise<ProjectMember[]> {
-  const { data } = await httpClient.get<ProjectMember[]>(`/projects/${projectId}/members`);
+export async function listMembers(
+  projectId: string,
+  params: MemberListParams = {},
+): Promise<PaginatedResponse<ProjectMember>> {
+  const { data } = await httpClient.get<PaginatedResponse<ProjectMember>>(
+    `/projects/${projectId}/members`,
+    { params },
+  );
   return data;
 }
 

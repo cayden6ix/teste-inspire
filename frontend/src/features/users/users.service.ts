@@ -1,4 +1,5 @@
 import { httpClient } from '@/services/api/httpClient';
+import type { PaginatedResponse, PaginationParams } from '@/types/pagination';
 
 /**
  * Usuario publico devolvido pela busca de membros (D-013).
@@ -10,11 +11,18 @@ export interface UserSummary {
   email: string;
 }
 
+export interface UserSearchParams extends PaginationParams {
+  /** Busca parcial e case-insensitive por e-mail (ILIKE no backend). */
+  email?: string;
+  name?: string;
+}
+
 /**
- * Busca parcial e case-insensitive por e-mail (ILIKE no backend).
- * Devolve lista vazia quando nao encontra ninguem.
+ * Devolve envelope vazio (`data: []`) quando nao encontra ninguem.
  */
-export async function findUsers(email: string): Promise<UserSummary[]> {
-  const { data } = await httpClient.get<UserSummary[]>('/users', { params: { email } });
+export async function findUsers(
+  params: UserSearchParams = {},
+): Promise<PaginatedResponse<UserSummary>> {
+  const { data } = await httpClient.get<PaginatedResponse<UserSummary>>('/users', { params });
   return data;
 }

@@ -1,11 +1,17 @@
 import { useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Alert } from '@/components/ui/Alert';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
-import { Select } from '@/components/ui/Field';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Page } from '@/components/ui/Page';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { ClearFilters, FilterSelect, Toolbar } from '@/components/ui/Toolbar';
+import { MAX_PAGE_LIMIT } from '@/types/pagination';
 import { TASK_STATUS_LABELS, TASK_STATUSES } from '@/types/task';
 import type { ReportGroupBy } from '@/types/report';
+import { formatNumber } from '@/utils/format';
 import { STATUS_TONES } from '@/utils/tone';
 import { useProjects } from '@/features/projects/useProjects';
 import { useReport } from './useReport';
@@ -15,103 +21,99 @@ import { useReport } from './useReport';
  * por projeto.
  */
 export function ReportsPage() {
-  const { projects } = useProjects();
+  const { data: projects } = useProjects(MAX_PAGE_LIMIT);
   const [searchParams] = useSearchParams();
   const [groupBy, setGroupBy] = useState<ReportGroupBy>('status');
   const [projectId, setProjectId] = useState(searchParams.get('projectId') ?? '');
-  const { report, loading, error } = useReport(groupBy, projectId);
+  const { report, loading, error, reload } = useReport(groupBy, projectId);
 
   const total = report?.total ?? 0;
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-900">Relatorios</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Totais de tarefas por status ou por responsavel.
-        </p>
-      </header>
+    <Page>
+      <PageHeader title="Relatórios" description="Totais de tarefas por status ou por responsável." />
 
-      <Card>
-        <div className="flex flex-wrap gap-3">
-          <div>
-            <label className="mb-1 block text-sm text-slate-700" htmlFor="report-group-by">
-              Agrupar por
-            </label>
-            <Select
-              id="report-group-by"
-              value={groupBy}
-              onChange={(e) => setGroupBy(e.target.value as ReportGroupBy)}
-              className="w-48"
-            >
-              <option value="status">Por status</option>
-              <option value="user">Por responsavel</option>
-            </Select>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm text-slate-700" htmlFor="report-project">
-              Projeto
-            </label>
-            <Select
-              id="report-project"
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className="w-64"
-            >
-              <option value="">Todos os meus projetos</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </Select>
-          </div>
+      <Toolbar>
+        <FilterSelect
+          label="Agrupar por"
+          value={groupBy}
+          onChange={(e) => setGroupBy(e.target.value as ReportGroupBy)}
+        >
+          <option value="status">Por status</option>
+          <option value="user">Por responsável</option>
+        </FilterSelect>
+        <FilterSelect
+          label="Projeto"
+          value={projectId}
+          onChange={(e) => setProjectId(e.target.value)}
+        >
+          <option value="">Todos os meus projetos</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </FilterSelect>
+        <ClearFilters
+          active={projectId !== '' || groupBy !== 'status'}
+          onClick={() => {
+            setProjectId('');
+            setGroupBy('status');
+          }}
+        />
+      </Toolbar>
+
+      {loading && (
+        <div role="status" aria-label="Carregando relatório…" className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <span className="sr-only">Carregando relatório…</span>
+          {Array.from({ length: 4 }, (_, index) => (
+            <Skeleton key={index} variant="stat" className="w-full" />
+          ))}
         </div>
-      </Card>
-
-      {loading && <p className="text-sm text-slate-600">Carregando relatorio...</p>}
-      {error && <Alert>{error}</Alert>}
+      )}
+      {error && <ErrorState message={error} onRetry={() => void reload()} retrying={loading} />}
 
       {report && !loading && (
-        <>
-          <div className="grid gap-4 sm:grid-cols-4">
+        <div className="flex animate-fade-in flex-col gap-6">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <Card title="Total de tarefas">
-              <p className="text-2xl font-semibold text-slate-900">{report.total}</p>
+              <p className="text-title font-semibold text-slate-900">{formatNumber(report.total)}</p>
             </Card>
             {TASK_STATUSES.map((status) => (
               <Card key={status} title={TASK_STATUS_LABELS[status]}>
-                <p className="text-2xl font-semibold text-slate-900">{report.byStatus[status] ?? 0}</p>
+                <p className="text-title font-semibold text-slate-900">{formatNumber(report.byStatus[status] ?? 0)}</p>
               </Card>
             ))}
           </div>
 
-          <Card title={groupBy === 'status' ? 'Tarefas por status' : 'Tarefas por responsavel'}>
+          <Card title={groupBy === 'status' ? 'Tarefas por status' : 'Tarefas por responsável'}>
             {report.groups.length === 0 ? (
-              <p className="text-sm text-slate-600">Nenhuma tarefa encontrada.</p>
+              <p className="text-body text-slate-600">Nenhuma tarefa encontrada.</p>
             ) : (
-              <ul className="space-y-2">
+              <ul className="flex flex-col gap-4">
                 {report.groups.map((group) => {
                   const percent = total === 0 ? 0 : Math.round((group.count / total) * 100);
 
                   return (
                     <li key={group.key}>
-                      <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center justify-between text-body">
                         <span className="flex items-center gap-2 text-slate-800">
-                          {groupBy === 'status' && (
+                          {groupBy === 'status' ? (
                             <Badge tone={STATUS_TONES[group.key as keyof typeof STATUS_TONES]}>
                               {TASK_STATUS_LABELS[group.key as keyof typeof TASK_STATUS_LABELS]}
                             </Badge>
+                          ) : (
+                            group.label
                           )}
-                          {group.label}
                         </span>
                         <span className="text-slate-600">
-                          {group.count} ({percent}%)
+                          {formatNumber(group.count)} ({percent}%)
                         </span>
                       </div>
-                      <div className="mt-1 h-2 w-full rounded bg-slate-100">
+                      <div className="mt-2 h-2 w-full rounded-pill bg-slate-100">
                         <div
-                          className="h-2 rounded bg-slate-900"
-                          style={{ width: `${percent}%` }}
+                          className="h-2 w-full origin-left animate-bar-grow rounded-pill bg-slate-900"
+                          style={{ '--bar-scale': percent / 100 } as CSSProperties}
                         />
                       </div>
                     </li>
@@ -120,8 +122,8 @@ export function ReportsPage() {
               </ul>
             )}
           </Card>
-        </>
+        </div>
       )}
-    </div>
+    </Page>
   );
 }

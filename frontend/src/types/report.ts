@@ -8,7 +8,7 @@ export type ReportGroupBy = 'status' | 'user';
 
 export const REPORT_GROUP_BY_LABELS: Record<ReportGroupBy, string> = {
   status: 'Por status',
-  user: 'Por responsavel',
+  user: 'Por responsável',
 };
 
 export interface ReportGroup {

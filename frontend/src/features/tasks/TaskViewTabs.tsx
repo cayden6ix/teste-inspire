@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { ButtonLink } from '@/components/ui/Button';
 
 type TaskViewTabsProps = {
   projectId: string | undefined;
@@ -14,29 +14,22 @@ export function TaskViewTabs({ projectId, active }: TaskViewTabsProps) {
     return null;
   }
 
-  const tabClass = (isActive: boolean) =>
-    `rounded border px-3 py-1.5 text-sm font-medium transition ${
-      isActive
-        ? 'border-slate-900 bg-slate-900 text-white'
-        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-    }`;
-
   return (
-    <nav className="inline-flex items-center gap-2" aria-label="Visualizacao das tarefas">
-      <Link
+    <nav className="inline-flex items-center gap-3" aria-label="Visualização das tarefas">
+      <ButtonLink
         to={`/projects/${projectId}/tasks`}
-        className={tabClass(active === 'lista')}
+        variant={active === 'lista' ? 'primary' : 'secondary'}
         aria-current={active === 'lista' ? 'page' : undefined}
       >
         Lista
-      </Link>
-      <Link
+      </ButtonLink>
+      <ButtonLink
         to={`/projects/${projectId}/board`}
-        className={tabClass(active === 'quadro')}
+        variant={active === 'quadro' ? 'primary' : 'secondary'}
         aria-current={active === 'quadro' ? 'page' : undefined}
       >
         Quadro
-      </Link>
+      </ButtonLink>
     </nav>
   );
 }

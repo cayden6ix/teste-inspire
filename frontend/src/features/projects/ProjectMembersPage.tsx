@@ -1,22 +1,26 @@
 import { useState } from 'react';
-import type { FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
-import { Alert } from '@/components/ui/Alert';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { Input, Select } from '@/components/ui/Field';
-import { PROJECT_ROLE_LABELS, assignableRoles } from '@/types/project';
-import type { ProjectRole } from '@/types/project';
-import { errorMessage } from '@/utils/errorMessage';
+import { DataTable } from '@/components/ui/DataTable';
+import type { DataColumn } from '@/components/ui/DataTable';
+import { Select } from '@/components/ui/Field';
+import { Page } from '@/components/ui/Page';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ClearFilters, FilterSelect, ResultCount, Toolbar } from '@/components/ui/Toolbar';
+import { PROJECT_ROLE_LABELS, PROJECT_ROLES, assignableRoles, canManageMember, canManageMembers } from '@/types/project';
+import type { ProjectMember, ProjectRole } from '@/types/project';
+import { useCurrentUserId } from '@/hooks/useCurrentUserId';
+import { useRowStates } from '@/hooks/useRowStates';
+import { useToast } from '@/stores/toastStore';
+import { notifyError } from '@/utils/notify';
+import { delay, motionMs } from '@/utils/motion';
 import { ROLE_TONES } from '@/utils/tone';
-import { findUsers } from '@/features/users/users.service';
-import type { UserSummary } from '@/features/users/users.service';
-import { addMember, removeMember, updateMemberRole } from './projects.service';
+import { DEFAULT_PAGE_LIMIT } from '@/types/pagination';
+import { AddMemberModal } from './AddMemberModal';
+import { removeMember, updateMemberRole } from './projects.service';
 import { useMembers } from './useMembers';
 import { useProject } from './useProject';
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Membros do projeto e seus papeis (D-013).
@@ -24,77 +28,53 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export function ProjectMembersPage() {
   const { projectId } = useParams();
   const { project } = useProject(projectId);
-  const { members, loading, error, reload } = useMembers(projectId);
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<UserSummary[]>([]);
-  const [selected, setSelected] = useState<UserSummary | null>(null);
-  const [role, setRole] = useState<ProjectRole>('member');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [roleFilter, setRoleFilter] = useState<ProjectRole | ''>('');
+  const {
+    data: members,
+    meta,
+    setPage,
+    loading,
+    error,
+    reload,
+  } = useMembers(projectId, DEFAULT_PAGE_LIMIT, roleFilter || undefined);
+  const [adding, setAdding] = useState(false);
+  const rowStates = useRowStates();
+  /** Papel escolhido no select da linha enquanto o PATCH roda. */
+  const [pendingRole, setPendingRole] = useState<Record<string, ProjectRole>>({});
+  const toast = useToast();
 
-  const canManage = project?.role === 'owner' || project?.role === 'admin';
-  const roles = project ? assignableRoles(project.role) : (['member'] as ProjectRole[]);
+  const currentUserId = useCurrentUserId();
 
-  async function handleSearch(event: FormEvent) {
-    event.preventDefault();
+  /** Papéis que o ator pode atribuir e se pode gerenciar membros (owner e admin). */
+  const roles = assignableRoles(project?.role);
+  const canManage = canManageMembers(project?.role);
+  /** Por linha: o select e o Remover só existem quando as regras do backend permitem. */
+  const canEditRow = (member: ProjectMember) => canManageMember(project?.role, currentUserId, member);
 
-    const value = query.trim();
-    if (!value) return;
-
-    setFormError(null);
-
-    if (UUID_PATTERN.test(value)) {
-      setSelected({ id: value, name: 'Usuario informado pelo UUID', email: '' });
-      setResults([]);
-      return;
-    }
-
-    setBusy(true);
-
-    try {
-      const found = await findUsers(value);
-      setResults(found);
-
-      if (found.length === 0) {
-        setFormError('Nenhum usuario encontrado com esse e-mail.');
-      }
-    } catch (err) {
-      setFormError(errorMessage(err, 'Nao foi possivel buscar usuarios.'));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleAdd(event: FormEvent) {
-    event.preventDefault();
-    if (!projectId || !selected) return;
-
-    setFormError(null);
-    setBusy(true);
-
-    try {
-      await addMember(projectId, { userId: selected.id, role });
-      setSelected(null);
-      setQuery('');
-      setResults([]);
-      await reload();
-    } catch (err) {
-      setFormError(errorMessage(err, 'Nao foi possivel adicionar o membro.'));
-    } finally {
-      setBusy(false);
-    }
+  /** O modal fecha sozinho depois da animacao de saida; aqui so recarrega a lista. */
+  async function handleAdded() {
+    await reload();
   }
 
   async function handleRoleChange(memberUserId: string, nextRole: ProjectRole) {
     if (!projectId) return;
 
-    setFormError(null);
+    rowStates.set(memberUserId, 'saving');
+    setPendingRole((prev) => ({ ...prev, [memberUserId]: nextRole }));
 
     try {
       await updateMemberRole(projectId, memberUserId, nextRole);
+      toast.success('Papel atualizado.');
       await reload();
     } catch (err) {
-      setFormError(errorMessage(err, 'Nao foi possivel alterar o papel.'));
+      notifyError(err, 'Não foi possível alterar o papel.');
+    } finally {
+      rowStates.clear(memberUserId);
+      setPendingRole((prev) => {
+        const next = { ...prev };
+        delete next[memberUserId];
+        return next;
+      });
     }
   }
 
@@ -104,163 +84,138 @@ export function ProjectMembersPage() {
       return;
     }
 
-    setFormError(null);
+    rowStates.set(memberUserId, 'deleting');
 
     try {
       await removeMember(projectId, memberUserId);
+      rowStates.set(memberUserId, 'removing');
+      toast.success('Membro removido.');
+      await delay(motionMs('fast'));
       await reload();
     } catch (err) {
-      setFormError(errorMessage(err, 'Nao foi possivel remover o membro.'));
+      notifyError(err, 'Não foi possível remover o membro.');
+    } finally {
+      rowStates.clear(memberUserId);
     }
   }
 
+  const columns: DataColumn<ProjectMember>[] = [
+    {
+      key: 'name',
+      header: 'Nome',
+      primary: true,
+      mobileLabel: false,
+      render: (member) => (
+        <span className="block truncate font-medium text-slate-900">{member.name}</span>
+      ),
+    },
+    {
+      key: 'email',
+      header: 'E-mail',
+      width: 'md:w-1/3',
+      mobileLabel: false,
+      render: (member) => <span className="block truncate text-slate-600">{member.email}</span>,
+    },
+    {
+      key: 'role',
+      header: 'Papel',
+      width: 'md:w-56',
+      mobileLabel: false,
+      render: (member) =>
+        canEditRow(member) ? (
+          <Select
+            value={pendingRole[member.userId] ?? member.role}
+            onChange={(e) => void handleRoleChange(member.userId, e.target.value as ProjectRole)}
+            aria-label={`Papel de ${member.name}`}
+            saving={rowStates.get(member.userId) === 'saving'}
+          >
+            {roles.map((option) => (
+              <option key={option} value={option}>
+                {PROJECT_ROLE_LABELS[option]}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <Badge tone={ROLE_TONES[member.role]}>{PROJECT_ROLE_LABELS[member.role]}</Badge>
+        ),
+    },
+    {
+      key: 'actions',
+      header: 'Ações',
+      width: 'md:w-32',
+      align: 'right',
+      mobileLabel: false,
+      render: (member) =>
+        canEditRow(member) ? (
+          <Button
+            variant="danger"
+            onClick={() => void handleRemove(member.userId, member.name)}
+            loading={rowStates.get(member.userId) === 'deleting'}
+            loadingLabel="Removendo…"
+          >
+            Remover
+          </Button>
+        ) : null,
+    },
+  ];
+
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-900">Membros</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          {project ? `Projeto ${project.name}` : 'Projeto'} - papeis owner, admin, member e viewer.
-        </p>
-      </header>
+    <Page>
+      <PageHeader
+        title="Membros"
+        description={`${project ? `Projeto ${project.name}` : 'Projeto'}. Papéis: proprietário, administrador, membro e visualizador.`}
+        actions={canManage && <Button onClick={() => setAdding(true)}>Adicionar membro</Button>}
+      />
 
-      {formError && <Alert>{formError}</Alert>}
+      <Toolbar>
+        <FilterSelect
+          value={roleFilter}
+          onChange={(e) => {
+            setRoleFilter(e.target.value as ProjectRole | '');
+            setPage(1);
+          }}
+          aria-label="Filtrar por papel"
+        >
+          <option value="">Todos os papéis</option>
+          {PROJECT_ROLES.map((option) => (
+            <option key={option} value={option}>
+              {PROJECT_ROLE_LABELS[option]}
+            </option>
+          ))}
+        </FilterSelect>
+        <ClearFilters
+          active={roleFilter !== ''}
+          onClick={() => {
+            setRoleFilter('');
+            setPage(1);
+          }}
+        />
+        <ResultCount count={meta.total} loading={loading} />
+      </Toolbar>
 
-      {canManage && (
-        <Card title="Adicionar membro" description="Busque pelo e-mail cadastrado ou informe o UUID.">
-          <form onSubmit={handleSearch} className="flex flex-wrap items-end gap-3">
-            <div className="min-w-64 flex-1">
-              <label className="mb-1 block text-sm text-slate-700" htmlFor="member-search">
-                E-mail ou UUID
-              </label>
-              <Input
-                id="member-search"
-                required
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="usuario@email.com"
-              />
-            </div>
-            <Button type="submit" variant="secondary" disabled={busy}>
-              {busy ? 'Buscando...' : 'Buscar'}
-            </Button>
-          </form>
+      <DataTable
+        label="Membros do projeto"
+        columns={columns}
+        rows={members}
+        rowKey={(member) => member.id}
+        loading={loading}
+        error={error}
+        onRetry={() => void reload()}
+        rowState={(member) => rowStates.get(member.userId)}
+        loadingLabel="Carregando membros…"
+        emptyTitle="Nenhum membro encontrado."
+        emptyDescription={roleFilter ? 'Nenhum membro com esse papel.' : undefined}
+        pagination={{ meta, onPageChange: setPage }}
+      />
 
-          {results.length > 0 && !selected && (
-            <ul className="mt-4 divide-y divide-slate-200">
-              {results.map((user) => (
-                <li key={user.id} className="flex items-center justify-between gap-4 py-2">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">{user.name}</p>
-                    <p className="text-xs text-slate-600">{user.email}</p>
-                  </div>
-                  <Button variant="secondary" size="sm" onClick={() => setSelected(user)}>
-                    Selecionar
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {selected && (
-            <form onSubmit={handleAdd} className="mt-4 flex flex-wrap items-end gap-3">
-              <div className="min-w-64 flex-1">
-                <p className="text-sm text-slate-700">Usuario selecionado</p>
-                <p className="text-sm font-medium text-slate-900">
-                  {selected.name}
-                  {selected.email ? ` (${selected.email})` : ''}
-                </p>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm text-slate-700" htmlFor="member-role">
-                  Papel
-                </label>
-                <Select
-                  id="member-role"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as ProjectRole)}
-                  className="w-40"
-                >
-                  {roles.map((option) => (
-                    <option key={option} value={option}>
-                      {PROJECT_ROLE_LABELS[option]}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <Button type="submit" disabled={busy}>
-                {busy ? 'Adicionando...' : 'Adicionar membro'}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setSelected(null);
-                  setResults([]);
-                }}
-              >
-                Trocar
-              </Button>
-            </form>
-          )}
-        </Card>
+      {adding && canManage && projectId && (
+        <AddMemberModal
+          projectId={projectId}
+          roles={roles}
+          onClose={() => setAdding(false)}
+          onAdded={handleAdded}
+        />
       )}
-
-      <Card title="Membros do projeto">
-        {loading && <p className="text-sm text-slate-600">Carregando membros...</p>}
-        {error && <Alert>{error}</Alert>}
-        {!loading && !error && members.length === 0 && (
-          <p className="text-sm text-slate-600">Nenhum membro encontrado.</p>
-        )}
-
-        {members.length > 0 && (
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
-              <tr>
-                <th className="py-2">Nome</th>
-                <th className="py-2">E-mail</th>
-                <th className="py-2">Papel</th>
-                <th className="py-2 text-right">Acoes</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {members.map((member) => (
-                <tr key={member.id}>
-                  <td className="py-2 font-medium text-slate-900">{member.name}</td>
-                  <td className="py-2 text-slate-600">{member.email}</td>
-                  <td className="py-2">
-                    {canManage ? (
-                      <Select
-                        value={member.role}
-                        onChange={(e) => void handleRoleChange(member.userId, e.target.value as ProjectRole)}
-                        className="w-36"
-                      >
-                        {roles.map((option) => (
-                          <option key={option} value={option}>
-                            {PROJECT_ROLE_LABELS[option]}
-                          </option>
-                        ))}
-                      </Select>
-                    ) : (
-                      <Badge tone={ROLE_TONES[member.role]}>{PROJECT_ROLE_LABELS[member.role]}</Badge>
-                    )}
-                  </td>
-                  <td className="py-2 text-right">
-                    {canManage && member.role !== 'owner' && (
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => void handleRemove(member.userId, member.name)}
-                      >
-                        Remover
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-    </div>
+    </Page>
   );
 }

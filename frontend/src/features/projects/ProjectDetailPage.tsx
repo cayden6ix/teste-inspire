@@ -1,13 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Alert } from '@/components/ui/Alert';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button, ButtonLink } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Input, Textarea } from '@/components/ui/Field';
+import { FormField, Input, Textarea } from '@/components/ui/Field';
+import { Page } from '@/components/ui/Page';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { PROJECT_ROLE_LABELS } from '@/types/project';
+import { useToast } from '@/stores/toastStore';
 import { errorMessage } from '@/utils/errorMessage';
+import { motionMs } from '@/utils/motion';
+import { notifyError } from '@/utils/notify';
 import { ROLE_TONES } from '@/utils/tone';
 import { deleteProject, updateProject } from './projects.service';
 import { useProject } from './useProject';
@@ -21,10 +28,28 @@ export function ProjectDetailPage() {
   const navigate = useNavigate();
   const { project, loading, error, reload } = useProject(projectId);
   const [editing, setEditing] = useState(false);
+  /** O card Editar toca o fade de saida antes de ser desmontado. */
+  const [editClosing, setEditClosing] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const toast = useToast();
+
+  function closeEditor() {
+    setEditClosing(true);
+  }
+
+  // Rede de seguranca: se `animationend` nao disparar, o card nao fica preso na tela.
+  useEffect(() => {
+    if (!editClosing) return;
+    const timer = window.setTimeout(() => {
+      setEditing(false);
+      setEditClosing(false);
+    }, motionMs('slow') + 100);
+    return () => window.clearTimeout(timer);
+  }, [editClosing]);
 
   const canEdit = project?.role === 'owner' || project?.role === 'admin';
   const canDelete = project?.role === 'owner';
@@ -38,10 +63,11 @@ export function ProjectDetailPage() {
 
     try {
       await updateProject(project.id, { name, description: description || null });
-      setEditing(false);
+      closeEditor();
+      toast.success('Projeto atualizado.');
       await reload();
     } catch (err) {
-      setFormError(errorMessage(err, 'Nao foi possivel salvar o projeto.'));
+      setFormError(errorMessage(err, 'Não foi possível salvar o projeto.'));
     } finally {
       setSaving(false);
     }
@@ -54,64 +80,100 @@ export function ProjectDetailPage() {
     }
 
     setFormError(null);
+    setDeleting(true);
 
     try {
       await deleteProject(project.id);
+      toast.success('Projeto excluído.');
       navigate('/projects');
     } catch (err) {
-      setFormError(errorMessage(err, 'Nao foi possivel excluir o projeto.'));
+      notifyError(err, 'Não foi possível excluir o projeto.');
+      setDeleting(false);
     }
   }
 
-  if (loading) {
-    return <p className="text-sm text-slate-600">Carregando projeto...</p>;
+  if (loading && !project) {
+    return (
+      <div role="status" aria-label="Carregando projeto…" className="flex flex-col gap-6">
+        <span className="sr-only">Carregando projeto…</span>
+        <div className="flex flex-col gap-3">
+          <Skeleton className="w-1/3" />
+          <Skeleton className="w-2/3" />
+        </div>
+        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 3 }, (_, index) => (
+            <Skeleton key={index} variant="card" className="w-full" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   if (error || !project) {
-    return <Alert>{error ?? 'Projeto nao encontrado.'}</Alert>;
+    return (
+      <ErrorState message={error ?? 'Projeto não encontrado.'} onRetry={() => void reload()} retrying={loading} />
+    );
   }
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-slate-900">{project.name}</h1>
+    <Page>
+      <PageHeader
+        title={
+          <>
+            {project.name}
             <Badge tone={ROLE_TONES[project.role]}>{PROJECT_ROLE_LABELS[project.role]}</Badge>
-          </div>
-          {project.description && <p className="mt-1 text-sm text-slate-600">{project.description}</p>}
-        </div>
-        <div className="flex gap-2">
-          {canEdit && (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setName(project.name);
-                setDescription(project.description ?? '');
-                setFormError(null);
-                setEditing((v) => !v);
-              }}
-            >
-              {editing ? 'Cancelar' : 'Editar'}
-            </Button>
-          )}
-          {canDelete && (
-            <Button variant="danger" onClick={() => void handleDelete()}>
-              Excluir
-            </Button>
-          )}
-        </div>
-      </header>
+          </>
+        }
+        description={project.description}
+        actions={
+          <>
+            {canEdit && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setName(project.name);
+                  setDescription(project.description ?? '');
+                  setFormError(null);
+                  if (editing) {
+                    closeEditor();
+                  } else {
+                    setEditClosing(false);
+                    setEditing(true);
+                  }
+                }}
+              >
+                {editing ? 'Cancelar' : 'Editar'}
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="danger"
+                onClick={() => void handleDelete()}
+                loading={deleting}
+                loadingLabel="Excluindo…"
+              >
+                Excluir
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {formError && <Alert>{formError}</Alert>}
 
       {editing && (
-        <Card title="Editar projeto">
-          <form onSubmit={handleSave} className="space-y-3">
-            <div>
-              <label className="mb-1 block text-sm text-slate-700" htmlFor="edit-name">
-                Nome
-              </label>
+        <Card
+          title="Editar projeto"
+          className={editClosing ? 'animate-fade-out' : 'animate-slide-up'}
+          onAnimationEnd={(event) => {
+            if (editClosing && event.target === event.currentTarget) {
+              setEditing(false);
+              setEditClosing(false);
+            }
+          }}
+        >
+          <form onSubmit={handleSave} className="flex flex-col gap-4">
+            <FormField label="Nome" htmlFor="edit-name">
               <Input
                 id="edit-name"
                 required
@@ -120,11 +182,8 @@ export function ProjectDetailPage() {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Nome do projeto"
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm text-slate-700" htmlFor="edit-description">
-                Descricao
-              </label>
+            </FormField>
+            <FormField label="Descrição" htmlFor="edit-description">
               <Textarea
                 id="edit-description"
                 rows={2}
@@ -132,41 +191,43 @@ export function ProjectDetailPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
+            </FormField>
+            <div>
+              <Button type="submit" loading={saving} loadingLabel="Salvando…">
+                Salvar
+              </Button>
             </div>
-            <Button type="submit" disabled={saving}>
-              {saving ? 'Salvando...' : 'Salvar'}
-            </Button>
           </form>
         </Card>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card title="Tarefas" description="Somente existem dentro do projeto (D-011).">
-          <Link to={`/projects/${project.id}/tasks`} className="text-sm text-slate-900 underline">
+      <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+        <Card title="Tarefas" description="Cada tarefa pertence a este projeto e só existe dentro dele.">
+          <ButtonLink to={`/projects/${project.id}/tasks`} className="mt-auto self-start">
             Ver tarefas
-          </Link>
+          </ButtonLink>
         </Card>
-        <Card title="Quadro" description="Kanban por status, com arrastar e soltar (D-012).">
-          <Link to={`/projects/${project.id}/board`} className="text-sm text-slate-900 underline">
+        <Card title="Quadro" description="Quadro por status, com arrastar e soltar.">
+          <ButtonLink to={`/projects/${project.id}/board`} className="mt-auto self-start">
             Ver quadro
-          </Link>
+          </ButtonLink>
         </Card>
-        <Card title="Membros" description="Papeis owner, admin, member e viewer (D-013).">
-          <Link to={`/projects/${project.id}/members`} className="text-sm text-slate-900 underline">
+        <Card title="Membros" description="Papéis: proprietário, administrador, membro e visualizador.">
+          <ButtonLink to={`/projects/${project.id}/members`} className="mt-auto self-start">
             Ver membros
-          </Link>
+          </ButtonLink>
         </Card>
-        <Card title="Relatorios" description="Totais por status ou por responsavel (D-015).">
-          <Link to={`/reports?projectId=${project.id}`} className="text-sm text-slate-900 underline">
-            Ver relatorio
-          </Link>
+        <Card title="Relatórios" description="Totais por status ou por responsável.">
+          <ButtonLink to={`/reports?projectId=${project.id}`} className="mt-auto self-start">
+            Ver relatório
+          </ButtonLink>
         </Card>
-        <Card title="CSV" description="Exporta e importa tarefas em massa (D-014).">
-          <Link to={`/projects/${project.id}/tasks`} className="text-sm text-slate-900 underline">
+        <Card title="CSV" description="Exporta e importa tarefas em massa.">
+          <ButtonLink to={`/projects/${project.id}/tasks`} className="mt-auto self-start">
             Exportar / importar
-          </Link>
+          </ButtonLink>
         </Card>
       </div>
-    </div>
+    </Page>
   );
 }
